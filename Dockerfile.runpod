@@ -78,8 +78,9 @@ COPY infra/sql/ /app/sql/
 COPY scripts/runpod-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Create directories
-RUN mkdir -p /app/data/reports /workspace/postgres/data /workspace/ollama
+# Create directories (PGDATA on container disk for chown; S3 volume for models/backups)
+RUN mkdir -p /app/data/reports /var/lib/postgresql/16/data /workspace/ollama /workspace/postgres && \
+    chown -R postgres:postgres /var/lib/postgresql/16
 
 WORKDIR /app
 
@@ -98,7 +99,7 @@ ENV NODE_ENV=production \
     OLLAMA_BASE_URL=http://localhost:11434 \
     OLLAMA_CHAT_MODEL=qwen3:8b \
     OLLAMA_EMBED_MODEL=nomic-embed-text \
-    PGDATA=/workspace/postgres/data \
+    PGDATA=/var/lib/postgresql/16/data \
     OLLAMA_MODELS=/workspace/ollama
 
 EXPOSE 8080 5432 11434

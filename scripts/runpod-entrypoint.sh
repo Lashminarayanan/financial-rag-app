@@ -1,14 +1,36 @@
 #!/bin/bash
-set -e
+# Don't use set -e; handle errors explicitly to avoid S3 write failures killing the script
 
 echo "========================================="
 echo " Financial RAG - RunPod Startup"
 echo "========================================="
 
-# ─── Fix Volume permissions ───────────────────────────────────────────────
-mkdir -p /workspace/postgres/data /workspace/ollama /app/data/reports
-chown -R postgres:postgres /workspace/postgres
-chmod 700 /workspace/postgres/data
+# ─── Graceful shutdown: dump DB + PDFs to S3 network volume ──
+cleanup() {
+    echo "[shutdown] Saving state to /workspace/..."
+    mkdir -p /workspace/postgres /workspace/reports
+
+    # Backup database
+    sudo -u postgres pg_dump -Fc -d "${POSTGRES_DB}" -f /workspace/postgres/backup.dump 2>&1 && \
+        echo "[shutdown] Database backed up." || \
+        echo "[shutdown] Warning: DB backup failed."
+
+    # Backup uploaded PDFs
+    if [ -d "/app/data/reports" ] && [ "$(ls -A /app/data/reports 2>/dev/null)" ]; then
+        cp -r /app/data/reports/* /workspace/reports/ 2>/dev/null && \
+            echo "[shutdown] PDFs backed up." || \
+            echo "[shutdown] Warning: PDF backup failed."
+    fi
+
+    sudo -u postgres /usr/lib/postgresql/16/bin/pg_ctl -D "$PGDATA" stop -m fast 2>/dev/null
+    kill $OLLAMA_PID 2>/dev/null
+    exit 0
+}
+trap cleanup SIGTERM SIGINT EXIT
+
+# ─── Fix permissions (container disk, not S3) ────────────────
+mkdir -p /var/lib/postgresql/16/data /workspace/ollama /workspace/postgres /app/data/reports
+chown -R postgres:postgres /var/lib/postgresql/16
 
 # ─── PostgreSQL ───────────────────────────────────────────────
 echo "[1/4] Starting PostgreSQL..."
@@ -18,7 +40,7 @@ if [ ! -f "$PGDATA/PG_VERSION" ]; then
     echo "[postgres] Initializing database cluster..."
     sudo -u postgres /usr/lib/postgresql/16/bin/initdb -D "$PGDATA"
 
-    # Configure PostgreSQL for local trust auth
+    # Configure PostgreSQL
     echo "host all all 0.0.0.0/0 md5" >> "$PGDATA/pg_hba.conf"
     echo "local all all trust" >> "$PGDATA/pg_hba.conf"
     sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" "$PGDATA/postgresql.conf"
@@ -47,8 +69,24 @@ if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${POSTGRE
         echo "  -> $f"
         sudo -u postgres psql -d "${POSTGRES_DB}" -f "$f"
     done
-    echo "[postgres] Database initialized."
 fi
+
+# ─── Restore from S3 backup if available ─────────────────────
+if [ -f "/workspace/postgres/backup.dump" ]; then
+    echo "[postgres] Restoring from persistent backup..."
+    sudo -u postgres pg_restore --clean --if-exists -d "${POSTGRES_DB}" /workspace/postgres/backup.dump 2>&1 && \
+        echo "[postgres] Restore complete." || \
+        echo "[postgres] Warning: restore had non-fatal errors (normal on first run)."
+fi
+
+# Restore uploaded PDFs from S3
+if [ -d "/workspace/reports" ] && [ "$(ls -A /workspace/reports 2>/dev/null)" ]; then
+    echo "[postgres] Restoring uploaded PDFs..."
+    cp -r /workspace/reports/* /app/data/reports/ 2>/dev/null && \
+        echo "[postgres] PDFs restored." || \
+        echo "[postgres] Warning: PDF restore failed."
+fi
+echo "[postgres] Database ready."
 
 # ─── Ollama ───────────────────────────────────────────────────
 echo "[2/4] Starting Ollama..."
@@ -70,11 +108,25 @@ ollama pull "${OLLAMA_CHAT_MODEL}" 2>&1 | tail -1
 ollama pull "${OLLAMA_EMBED_MODEL}" 2>&1 | tail -1
 echo "[ollama] Models ready: ${OLLAMA_CHAT_MODEL}, ${OLLAMA_EMBED_MODEL}"
 
+# ─── Periodic backup (every 30 min) ─────────────────────────
+(while true; do
+    sleep 1800
+    sudo -u postgres pg_dump -Fc -d "${POSTGRES_DB}" -f /workspace/postgres/backup.dump 2>/dev/null && \
+        echo "[backup] Periodic DB backup saved." || true
+    # Also backup PDFs
+    if [ -d "/app/data/reports" ] && [ "$(ls -A /app/data/reports 2>/dev/null)" ]; then
+        mkdir -p /workspace/reports
+        cp -r /app/data/reports/* /workspace/reports/ 2>/dev/null
+    fi
+done) &
+
 # ─── Node.js App ─────────────────────────────────────────────
 echo "[4/4] Starting Node.js application on port ${BACKEND_PORT}..."
 echo "========================================="
 echo " All services running. App: http://0.0.0.0:${BACKEND_PORT}"
 echo "========================================="
 
-# Start the Node.js app in foreground (keeps container alive)
-exec node /app/backend-enterprise/src/server.js
+# Start Node.js app (wait on it so trap can catch signals)
+node /app/backend-enterprise/src/server.js &
+NODE_PID=$!
+wait $NODE_PID
