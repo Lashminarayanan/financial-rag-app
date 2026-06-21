@@ -1,8 +1,6 @@
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/lashminarayanan/rag-app:latest
     container_name: financial-rag-app
     restart: unless-stopped
     ports:
@@ -23,7 +21,7 @@ services:
       - RAG_PYTHON_ENTRY=/app/rag/app/query_worker.py
       - RAG_INGEST_WORKER_ENTRY=/app/rag/app/ingest_worker.py
     volumes:
-      - /runpod-volume/reports:/app/data/reports
+      - /workspace/reports:/app/data/reports
     depends_on:
       - postgres
       - ollama
@@ -39,7 +37,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - /runpod-volume/postgres/data:/var/lib/postgresql/data
+      - /workspace/postgres/data:/var/lib/postgresql/data
       - ./infra/sql:/docker-entrypoint-initdb.d
 
   ollama:
@@ -49,7 +47,7 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - /runpod-volume/ollama:/root/.ollama
+      - /workspace/ollama:/root/.ollama
       - ./scripts/ollama-entrypoint.sh:/entrypoint.sh
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     environment:

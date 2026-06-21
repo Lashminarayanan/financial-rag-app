@@ -1,0 +1,103 @@
+# ============================================================
+# All-in-one RunPod deployment image
+# Includes: PostgreSQL 16 + pgvector, Ollama, Node.js 20, Python 3.11
+# ============================================================
+
+# Stage 1: Build React frontend
+FROM node:20-alpine AS frontend-build
+WORKDIR /build
+COPY frontend-react/package.json frontend-react/package-lock.json* ./
+RUN npm ci --ignore-scripts 2>/dev/null || npm install
+COPY frontend-react/tsconfig.json frontend-react/vite.config.ts frontend-react/index.html ./
+COPY frontend-react/src/ ./src/
+RUN npx vite build
+
+# Stage 2: Install Python dependencies
+FROM python:3.11-slim AS python-deps
+WORKDIR /deps
+COPY rag/requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# Stage 3: Final all-in-one runtime
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates gnupg lsb-release sudo \
+    python3.11 python3.11-venv python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Make python3 point to python3.11
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+
+# Install Node.js 20
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install PostgreSQL 16 + pgvector
+RUN sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list' && \
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+      postgresql-16 \
+      postgresql-16-pgvector \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Ollama
+RUN curl -fsSL https://ollama.com/install.sh | sh
+
+# Set up application directory
+WORKDIR /app
+
+# Copy Python packages from stage 2
+COPY --from=python-deps /install/lib/python3.11/site-packages /usr/lib/python3/dist-packages/
+COPY --from=python-deps /install/bin/* /usr/local/bin/
+
+# Copy RAG Python application
+COPY rag/app/ /app/rag/app/
+
+# Copy Node.js backend and install production dependencies
+COPY backend-enterprise/package.json backend-enterprise/package-lock.json* /app/backend-enterprise/
+WORKDIR /app/backend-enterprise
+RUN npm ci --omit=dev --ignore-scripts 2>/dev/null || npm install --omit=dev
+COPY backend-enterprise/src/ /app/backend-enterprise/src/
+
+# Copy built frontend
+COPY --from=frontend-build /build/dist/ /app/backend-enterprise/public/
+
+# Copy SQL init scripts
+COPY infra/sql/ /app/sql/
+
+# Copy entrypoint script
+COPY scripts/runpod-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Create directories
+RUN mkdir -p /app/data/reports /workspace/postgres/data /workspace/ollama
+
+WORKDIR /app
+
+# Environment variables
+ENV NODE_ENV=production \
+    BACKEND_PORT=8080 \
+    PYTHON_QUERY_WORKER=python3 \
+    RAG_PYTHON_ENTRY=/app/rag/app/query_worker.py \
+    RAG_INGEST_WORKER_ENTRY=/app/rag/app/ingest_worker.py \
+    REPORTS_DIR=/app/data/reports \
+    POSTGRES_HOST=localhost \
+    POSTGRES_PORT=5432 \
+    POSTGRES_DB=financial_rag \
+    POSTGRES_USER=rag_user \
+    POSTGRES_PASSWORD=rag_pass \
+    OLLAMA_BASE_URL=http://localhost:11434 \
+    OLLAMA_CHAT_MODEL=qwen3:8b \
+    OLLAMA_EMBED_MODEL=nomic-embed-text \
+    PGDATA=/workspace/postgres/data \
+    OLLAMA_MODELS=/workspace/ollama
+
+EXPOSE 8080 5432 11434
+
+ENTRYPOINT ["/entrypoint.sh"]
