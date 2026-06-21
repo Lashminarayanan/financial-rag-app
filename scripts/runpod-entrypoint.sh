@@ -5,6 +5,11 @@ echo "========================================="
 echo " Financial RAG - RunPod Startup"
 echo "========================================="
 
+# ─── Fix Volume permissions ───────────────────────────────────────────────
+mkdir -p /workspace/postgres/data /workspace/ollama /app/data/reports
+chown -R postgres:postgres /workspace/postgres
+chmod 700 /workspace/postgres/data
+
 # ─── PostgreSQL ───────────────────────────────────────────────
 echo "[1/4] Starting PostgreSQL..."
 
