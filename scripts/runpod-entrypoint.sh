@@ -29,8 +29,10 @@ cleanup() {
 trap cleanup SIGTERM SIGINT EXIT
 
 # ─── Fix permissions (container disk, not S3) ────────────────
-mkdir -p /var/lib/postgresql/16/data /workspace/ollama /workspace/postgres /app/data/reports
+mkdir -p /var/lib/postgresql/16/data /workspace/ollama /workspace/postgres /app/data/reports /var/log/postgresql
 chown -R postgres:postgres /var/lib/postgresql/16
+chown postgres:postgres /var/log/postgresql
+chmod 0750 /var/log/postgresql
 
 # ─── PostgreSQL ───────────────────────────────────────────────
 echo "[1/4] Starting PostgreSQL..."
@@ -47,7 +49,7 @@ if [ ! -f "$PGDATA/PG_VERSION" ]; then
 fi
 
 # Start PostgreSQL
-sudo -u postgres /usr/lib/postgresql/16/bin/pg_ctl -D "$PGDATA" -l /var/log/postgresql.log start
+sudo -u postgres /usr/lib/postgresql/16/bin/pg_ctl -D "$PGDATA" -l /var/log/postgresql/postgresql.log start
 
 # Wait for PostgreSQL to be ready
 echo "[postgres] Waiting for PostgreSQL..."
