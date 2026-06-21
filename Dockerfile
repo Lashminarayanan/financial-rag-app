@@ -11,7 +11,7 @@ RUN npm ci --ignore-scripts 2>/dev/null || npm install
 COPY frontend-react/tsconfig.json frontend-react/vite.config.ts frontend-react/index.html ./
 COPY frontend-react/src/ ./src/
 
-RUN npm run build
+RUN npx run build
 
 # ============================================================
 # Stage 2: Install Python dependencies
