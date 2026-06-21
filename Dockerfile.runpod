@@ -49,7 +49,7 @@ RUN sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-
 # Install Ollama
 RUN apt-get update && apt-get install -y curl zstd tar \
     && curl -L https://github.com/ollama/ollama/releases/latest/download/ollama-linux-amd64.tar.zst -o /tmp/ollama.tar.zst \
-    && tar --use-compress-program=unzstd -xvf /tmp/ollama.tar.zst -C /usr/local/bin \
+    && tar --use-compress-program=unzstd -xvf /tmp/ollama.tar.zst -C /usr/local/ \
     && rm /tmp/ollama.tar.zst \
     && test -x /usr/local/bin/ollama \
     && /usr/local/bin/ollama --version
