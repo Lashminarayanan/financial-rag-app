@@ -75,8 +75,8 @@ if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${POSTGRE
     echo "[postgres] providing grants..."
     sudo -u postgres psql -d "${POSTGRES_DB}" -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO ${POSTGRES_USER};"
     sudo -u postgres psql -d "${POSTGRES_DB}" -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO ${POSTGRES_USER};"
-    sudo -u postgres psql -d "${POSTGRES_DB}" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ALL TABLES TO ${POSTGRES_USER};"
-    sudo -u postgres psql -d "${POSTGRES_DB}" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ALL SEQUENCES TO ${POSTGRES_USER};"
+    sudo -u postgres psql -d "${POSTGRES_DB}" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${POSTGRES_USER};"
+    sudo -u postgres psql -d "${POSTGRES_DB}" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${POSTGRES_USER};"
 fi
 
 # ─── Restore from S3 backup if available ─────────────────────
