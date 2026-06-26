@@ -12,9 +12,10 @@ router.post('/stream', (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
-  const { query } = parsed.data;
+  const { query, analysisMode = 'general' } = parsed.data;
   console.log('[INFO] /api/v1/research/stream');
   console.log('[INFO] query=', query);
+  console.log('[INFO] analysisMode=', analysisMode);
 
   initSse(res);
   sendEvent(res, 'status', {
@@ -27,8 +28,9 @@ router.post('/stream', (req, res) => {
   const startTime = Date.now();
   let sourceCount = 0;
   let verified = false;
+  let qualityMetrics = null;
 
-  const worker = startQueryWorker({ query });
+  const worker = startQueryWorker({ query, analysisMode });
   let stdoutBuffer = '';
 
   const relayLine = (line) => {
@@ -44,6 +46,10 @@ router.post('/stream', (req, res) => {
       }
       if (eventType === 'final' && typeof payload.verified === 'boolean') {
         verified = payload.verified;
+      }
+      if (eventType === 'quality' && payload.metrics) {
+        qualityMetrics = payload.metrics;
+        console.log('[Backend Captured quality metrics:', qualityMetrics) ;
       }
       
       sendEvent(res, eventType, payload);
@@ -76,12 +82,31 @@ router.post('/stream', (req, res) => {
     console.log('[INFO] worker closed code=', code, 'signal=', signal);
     
     // Log query to history
+    console.log('[Backend] saving to query_history. Quality metrics:', qualityMetrics)
     const duration = Date.now() - startTime;
     try {
       await pool.query(`
-        INSERT INTO query_history (query, duration, source_count, verified)
-        VALUES ($1, $2, $3, $4)
-      `, [query, duration, sourceCount, verified]);
+        INSERT INTO query_history (
+          query, 
+          duration, 
+          source_count, 
+          verified,
+          faithfulness_score,
+          relevancy_score,
+          precision_score,
+          overall_quality_score
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [
+        query, 
+        duration, 
+        sourceCount, 
+        verified,
+        qualityMetrics?.faithfulness || null,
+        qualityMetrics?.answer_relevancy || null,
+        qualityMetrics?.context_precision || null,
+        qualityMetrics?.overall_score || null
+      ]);
     } catch (err) {
       console.error('[ERROR] Failed to log query history:', err.message);
     }

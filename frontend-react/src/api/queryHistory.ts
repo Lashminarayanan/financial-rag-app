@@ -7,6 +7,10 @@ export type QueryHistoryItem = {
   duration?: number;
   sourceCount?: number;
   verified?: boolean;
+  faithfulness_score?: number;
+  relevancy_score?: number;
+  precision_score?: number;
+  overall_quality_score?: number;
 };
 
 export async function fetchQueryHistory(): Promise<QueryHistoryItem[]> {

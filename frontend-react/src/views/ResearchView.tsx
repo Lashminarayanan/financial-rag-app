@@ -6,6 +6,22 @@ import { InsightsTable } from '../components/InsightsTable';
 
 export function ResearchView() {
   const vm = useResearchStream();
+ 
+  // Debug: Track component lifecycle
+  React.useEffect(() => {
+    console.log('[ResearchView] Component mounted');
+    return () => console.log('[ResearchView] Component unmounting');
+  }, []);
+ 
+  // Debug: Track answer state
+  React.useEffect(() => {
+    console.log('[ResearchView] Answer state:', vm.answer ? `${vm.answer.length} chars` : 'empty');
+  }, [vm.answer]);
+ 
+  // Debug: Track quality metrics
+  React.useEffect(() => {
+    console.log('[ResearchView] Quality metrics state:', vm.qualityMetrics);
+  }, [vm.qualityMetrics]);
 
   return (
     <div className="view-content">
@@ -13,6 +29,8 @@ export function ResearchView() {
         <QueryComposer
           query={vm.query}
           onChange={vm.setQuery}
+          analysisMode={vm.analysisMode}
+          onModeChange={vm.setAnalysisMode}
           onRun={vm.run}
           onReset={vm.reset}
           running={vm.running}
@@ -29,6 +47,7 @@ export function ResearchView() {
         verified={vm.verified}
         running={vm.running}
         sources={vm.sources}
+        qualityMetrics={vm.qualityMetrics}
       />
 
       <InsightsTable metrics={vm.metrics} />

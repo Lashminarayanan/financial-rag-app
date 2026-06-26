@@ -27,7 +27,11 @@ router.get('/', async (req, res, next) => {
         timestamp,
         duration,
         source_count AS "sourceCount",
-        verified
+        verified,
+        faithfulness_score,
+        relevancy_score,
+        precision_score,
+        overall_quality_score
       FROM query_history
       ORDER BY timestamp DESC
       LIMIT 50

@@ -1,7 +1,9 @@
 langgraph>=0.2.34
 langchain-core>=0.3.0
-psycopg[binary]>=3.2.1
+psycopg-binary>=3.2.1
 python-dotenv>=1.0.1
 requests>=2.32.3
+streamlit>=1.36.0
 pypdf>=5.0.0
+docling>=2.0.0
 pydantic>=2.8.2

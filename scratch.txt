@@ -1,1 +1,294 @@
-https://www.screener.in/annual-reports/
+"""
+Annual Report RAG Analyzer — FastAPI backend.
+Endpoints:
+  POST /analyze       — RAG query with analysis mode
+  POST /upload-pdf    — Upload & ingest annual report PDF
+  GET  /summary       — Auto-generate full report summary
+  GET  /stats         — Collection stats
+  GET  /health        — Health check
+"""
+
+import os, sys, uuid, httpx
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from typing import Optional
+from app.rag_engine import RAGEngine
+
+app = FastAPI(title="Annual Report RAG Analyzer", version="1.0.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"],
+                   allow_methods=["*"], allow_headers=["*"])
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+rag = RAGEngine(persist_directory="./chroma_db")
+
+OLLAMA_URL   = "http://localhost:11434/api/chat"
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "phi3")
+
+# ── Analysis mode prompts ─────────────────────────────
+MODE_PROMPTS = {
+    "general": "You are an expert financial analyst. Answer questions about the annual report using ONLY the context provided. Be clear, precise and use numbers where available.",
+    "revenue": "You are a revenue analyst. Focus on revenue figures, growth rates, segment-wise revenue breakdown, and revenue trends from the context. Use specific numbers and percentages.",
+    "profit":  "You are a profitability analyst. Focus on net profit, EBITDA, margins, EPS, ROE, ROCE and profitability trends from the context. Use specific numbers.",
+    "risk":    "You are a risk analyst. Identify and explain the key risk factors mentioned in the context. Categorize risks and explain their potential impact on the business.",
+    "summary": "You are a senior equity analyst. Provide a comprehensive summary covering: company overview, financial performance, key highlights, risks, and future outlook based on the context.",
+}
+
+
+# ── Schemas ───────────────────────────────────────────
+class AnalyzeRequest(BaseModel):
+    query: str
+    mode:  Optional[str] = "general"   # general | revenue | profit | risk | summary
+    top_k: Optional[int] = 6
+
+
+# ── LLM ───────────────────────────────────────────────
+async def generate_answer(query: str, context: str, mode: str = "general") -> str:
+    system = MODE_PROMPTS.get(mode, MODE_PROMPTS["general"])
+    prompt = f"""{system}
+
+Annual Report Context:
+{context}
+
+Question: {query}
+
+Answer (use bullet points where helpful, cite specific numbers):"""
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            res = await client.post(
+                OLLAMA_URL,
+                json={
+                    "model":   OLLAMA_MODEL,
+                    "messages":[{"role":"user","content":prompt}],
+                    "stream":  False,
+                }
+            )
+            if res.status_code != 200:
+                raise HTTPException(status_code=502,
+                    detail=f"Ollama error: {res.text}")
+            return res.json()["message"]["content"]
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503,
+            detail="Cannot connect to Ollama. Run: ollama serve")
+
+
+# ── Routes ────────────────────────────────────────────
+@app.get("/")
+async def root():
+    return FileResponse("static/index.html")
+
+@app.get("/health")
+async def health():
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as c:
+            r = await c.get("http://localhost:11434")
+            ollama = "running" if r.status_code == 200 else "error"
+    except Exception:
+        ollama = "not running"
+    return {"status": "ok", "ollama": ollama, "model": OLLAMA_MODEL}
+
+@app.get("/stats")
+async def stats():
+    return rag.stats()
+
+@app.post("/analyze")
+async def analyze(req: AnalyzeRequest):
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+
+    # Map mode to category filter for smarter retrieval
+    category_map = {
+        "revenue": "financials",
+        "profit":  "financials",
+        "risk":    "risks",
+        "summary": None,
+        "general": None,
+    }
+    category = category_map.get(req.mode)
+    chunks   = rag.retrieve(req.query, top_k=req.top_k, category=category)
+    context  = rag.build_context(chunks)
+    answer   = await generate_answer(req.query, context, req.mode)
+
+    sources = [
+        {
+            "text":      c["text"][:200] + "..." if len(c["text"]) > 200 else c["text"],
+            "section":   c["metadata"].get("section", ""),
+            "category":  c["metadata"].get("category", ""),
+            "relevance": round(1 - c["distance"], 3),
+        }
+        for c in chunks
+    ]
+    return {
+        "query":        req.query,
+        "mode":         req.mode,
+        "answer":       answer,
+        "sources":      sources,
+        "total_chunks": rag.collection.count(),
+    }
+
+@app.get("/summary")
+async def auto_summary():
+    """Auto-generate a full company summary."""
+    query   = "Give me a complete summary of this company including financials, highlights, risks and future outlook"
+    chunks  = rag.retrieve(query, top_k=10)
+    context = rag.build_context(chunks)
+    answer  = await generate_answer(query, context, "summary")
+    return {"summary": answer}
+
+@app.post("/upload-pdf")
+async def upload_pdf(
+    file:    UploadFile = File(...),
+    company: str        = Form("Company"),
+    year:    str        = Form("2023"),
+):
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files accepted.")
+    try:
+        import fitz
+    except ImportError:
+        raise HTTPException(status_code=500,
+            detail="PyMuPDF not installed. Run: pip install pymupdf")
+
+    data = await file.read()
+    doc_id = f"pdf_{uuid.uuid4().hex[:8]}"
+    text   = ""
+    try:
+        pdf = fitz.open(stream=data, filetype="pdf")
+        for page in pdf:
+            text += page.get_text()
+        pdf.close()
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Could not read PDF: {e}")
+
+    if not text.strip():
+        raise HTTPException(status_code=422,
+            detail="PDF appears scanned/image-only. Text extraction failed.")
+
+    metadata = {
+        "category": "uploaded",
+        "company":  company,
+        "year":     year,
+        "source":   "pdf_upload",
+        "filename": file.filename,
+    }
+    chunks = rag.chunk_text(text, doc_id, metadata)
+    rag.add_documents(chunks)
+
+    return {
+        "message":      f"Successfully ingested '{file.filename}'",
+        "chunks_added": len(chunks),
+        "doc_id":       doc_id,
+        "company":      company,
+        "year":         year,
+    }
+
+
+
+
+"""
+RAG Engine for Annual Report Analyzer.
+Supports pre-loaded data + PDF upload + analysis modes.
+"""
+
+from typing import List, Dict, Any, Optional
+from data.report_data import REPORT_DOCUMENTS
+from chromadb.utils import embedding_functions
+import chromadb
+import os
+import sys
+import re
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+COLLECTION_NAME = "annual_report_kb"
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+TOP_K = 6
+CHUNK_SIZE = 600
+CHUNK_OVERLAP = 100
+
+
+class RAGEngine:
+    def __init__(self, persist_directory: str = "./chroma_db"):
+        print(" Initialising Annual Report RAG Engine...")
+        self.ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=EMBEDDING_MODEL
+        )
+        self.client = chromadb.PersistentClient(path=persist_directory)
+        self.collection = self.client.get_or_create_collection(
+            name=COLLECTION_NAME,
+            embedding_function=self.ef,
+            metadata={"hnsw:space": "cosine"}
+        )
+        if self.collection.count() == 0:
+            print(" Ingesting sample annual report data...")
+            self._ingest()
+        else:
+            print(f"Collection ready with {self.collection.count()} chunks.")
+
+    def _ingest(self):
+        ids = [d["id"] for d in REPORT_DOCUMENTS]
+        texts = [d["text"] for d in REPORT_DOCUMENTS]
+        metadatas = [d["metadata"] for d in REPORT_DOCUMENTS]
+        self.collection.add(ids=ids, documents=texts, metadatas=metadatas)
+        print(f" Ingested {len(REPORT_DOCUMENTS)} report chunks.")
+
+    def add_documents(self, documents: List[Dict[str, Any]]):
+        ids = [d["id"] for d in documents]
+        texts = [d["text"] for d in documents]
+        metadatas = [d.get("metadata", {}) for d in documents]
+        self.collection.add(ids=ids, documents=texts, metadatas=metadatas)
+
+    def chunk_text(self, text: str, doc_id: str,
+                   metadata: Optional[Dict] = None) -> List[Dict]:
+        text = re.sub(r'\s+', ' ', text).strip()
+        chunks, start, idx = [], 0, 0
+        while start < len(text):
+            end = min(start + CHUNK_SIZE, len(text))
+            chunk = text[start:end]
+            if chunk.strip():
+                chunks.append({
+                    "id":       f"{doc_id}_chunk_{idx}",
+                    "text":     chunk,
+                    "metadata": {**(metadata or {}), "chunk_index": idx,
+                                 "source_doc": doc_id}
+                })
+            start += CHUNK_SIZE - CHUNK_OVERLAP
+            idx += 1
+        return chunks
+
+    def retrieve(self, query: str, top_k: int = TOP_K,
+                 category: Optional[str] = None) -> List[Dict]:
+        where = {"category": category} if category else None
+        results = self.collection.query(
+            query_texts=[query],
+            n_results=min(top_k, self.collection.count()),
+            where=where
+        )
+        return [
+            {
+                "text":     results["documents"][0][i],
+                "metadata": results["metadatas"][0][i],
+                "distance": results["distances"][0][i],
+            }
+            for i in range(len(results["documents"][0]))
+        ]
+
+    def build_context(self, chunks: List[Dict]) -> str:
+        parts = []
+        for i, c in enumerate(chunks, 1):
+            m = c["metadata"]
+            sec = m.get("section", m.get("category", ""))
+            parts.append(f"[{i}] [{sec.upper()}]\n{c['text']}")
+        return "\n\n".join(parts)
+
+    def stats(self) -> Dict:
+        return {
+            "total_chunks":    self.collection.count(),
+            "collection_name": COLLECTION_NAME,
+            "embedding_model": EMBEDDING_MODEL,
+        }

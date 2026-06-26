@@ -130,6 +130,13 @@ done) &
 
 # ─── Node.js App ─────────────────────────────────────────────
 echo "[4/4] Starting Node.js application on port ${BACKEND_PORT}..."
+
+# Write runtime config.json for frontend (multi-pod support)
+if [ -n "$API_BASE_URL" ]; then
+  echo "{\"apiBaseUrl\": \"$API_BASE_URL\"}" > /app/backend-enterprise/public/config.json
+  echo "[config] Frontend API base set to: $API_BASE_URL"
+fi
+
 echo "========================================="
 echo " All services running. App: http://0.0.0.0:${BACKEND_PORT}"
 echo "========================================="

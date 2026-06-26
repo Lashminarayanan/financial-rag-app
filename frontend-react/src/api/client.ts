@@ -1,10 +1,10 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+import { getApiBaseSync } from './config';
 
 export async function streamResearch(
-  payload: { query: string },
+  payload: { query: string; analysisMode?: string },
   onEvent: (eventType: string, data: any) => void
 ) {
-  const response = await fetch(`${API_BASE_URL}/api/v1/research/stream`, {
+  const response = await fetch(`${getApiBaseSync()}/api/v1/research/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)

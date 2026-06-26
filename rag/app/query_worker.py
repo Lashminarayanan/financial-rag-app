@@ -9,10 +9,10 @@ from pathlib import Path
 
 if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[1]))
-    from app.graph import build_graph
+    from app.graph import build_graph, evaluate_quality
     from app.ollama_client import generate_answer_stream
 else:
-    from .graph import build_graph
+    from .graph import build_graph, evaluate_quality
     from .ollama_client import generate_answer_stream
 
 
@@ -33,15 +33,20 @@ def emit(payload):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--query", required=True)
+    parser.add_argument("--mode", default="general", choices=["general", "revenue", "profitability", "risk", "valuation"], help="Analysis mode persona")
     args = parser.parse_args()
 
     graph = build_graph()
     state = {
         "query": args.query,
+        "analysis_mode": args.mode,
+        "retrieval_strategy": "hybrid",  # Will be set by query_classifier
         "plan": [],
         "evidence": [],
+        "financial_data": [],  # NEW: Structured SQL data
         "comparison_notes": [],
-        "prompt": "",
+        "system_prompt": "",
+        "user_prompt": "",
         "verified": False,
         "warnings": [],
     }
@@ -54,10 +59,30 @@ def main():
     emit({
         "type": "status",
         "stage": "retriever",
-        "message": f"Retrieved {len(result['evidence'])} evidence chunks"
+        "message": f"Retrieved {len(result['evidence'])} document chunks + {len(result.get('financial_data', []))} structured items",
+        "retrieval_strategy": result.get("retrieval_strategy", "unknown")
     })
 
-    emit({"type": "sources", "sources": result["evidence"]})
+    # Combine both evidence sources for frontend display
+    all_sources = []
+    
+    # Add financial data first
+    for item in result.get('financial_data', []):
+        all_sources.append({
+            'source_type': 'structured_sql',
+            'data_category': item['data_category'],
+            'fiscal_year': item['fiscal_year'],
+            'company': item['company'],
+            'metrics': item['metrics'],
+            'text_summary': item['text_summary'],
+            'file_name': f"{item['data_category']}_FY{item['fiscal_year']}",
+            'section': 'SQL Database',
+        })
+    
+    # Add vector evidence
+    all_sources.extend(result["evidence"])
+    
+    emit({"type": "sources", "sources": all_sources})
 
     emit({
         "type": "status",
@@ -77,16 +102,32 @@ def main():
     answer_parts = []
     emit({"type": "status", "stage": "summarizer", "message": "Streaming answer"})
 
-    for token in generate_answer_stream(result["prompt"]):
+    for token in generate_answer_stream(result["system_prompt"], result["user_prompt"]):
         answer_parts.append(token)
         emit({"type": "token", "token": token})
 
     final_answer = "".join(answer_parts)
+    
+    # Evaluate answer quality using RAGAS
+    emit({"type": "status", "stage": "quality_check", "message": "Evaluating answer quality"})
+    
+    # Update state with final answer for evaluation
+    result['final_answer'] = final_answer
+    result = evaluate_quality(result)
+    
+    # Emit quality metrics if available
+    if result.get('quality_metrics'):
+        emit({
+            "type": "quality",
+            "metrics": result['quality_metrics']
+        })
+    
     emit({
         "type": "final",
         "answer": final_answer,
         "verified": result["verified"],
         "warnings": result["warnings"],
+        "quality_metrics": result.get('quality_metrics'),
     })
 
 

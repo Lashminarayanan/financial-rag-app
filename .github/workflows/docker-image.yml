@@ -2,7 +2,7 @@
 
 on:
   push:
-    branches: [runpod]
+    branches: [runpod-rel]
   workflow_dispatch:
 
 env:
@@ -68,7 +68,7 @@ jobs:
           file: ./Dockerfile.runpod
           push: true
           tags: |
-            ghcr.io/${{ env.REPO_NAME }}/rag-app-runpod:latest
-            ghcr.io/${{ env.REPO_NAME }}/rag-app-runpod:${{ github.sha }}
+            ghcr.io/${{ env.REPO_NAME }}/rag-app-runpod-rel:latest
+            ghcr.io/${{ env.REPO_NAME }}/rag-app-runpod-rel:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -18,9 +18,15 @@ export default function App() {
 
       <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {activeTab === 'research' && <ResearchView />}
-      {activeTab === 'documents' && <DocumentsView />}
-      {activeTab === 'observability' && <ObservabilityView />}
+      <div style={{ display: activeTab === 'research' ? 'block' : 'none' }}>
+        <ResearchView />
+      </div>
+      <div style={{ display: activeTab === 'documents' ? 'block' : 'none' }}>
+        <DocumentsView />
+      </div>
+      <div style={{ display: activeTab === 'observability' ? 'block' : 'none' }}>
+        <ObservabilityView />
+      </div>
     </div>
   );
 }

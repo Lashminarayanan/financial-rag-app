@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ExecutionTimeline } from './ExecutionTimeline';
 import { AnswerPanel } from './AnswerPanel';
 import { EvidenceExplorer } from './EvidenceExplorer';
+import type { QualityMetrics } from '../types';
 
 type WorkspaceTab = 'answer' | 'timeline' | 'evidence';
 
@@ -15,6 +16,7 @@ type Props = {
   verified: boolean;
   running: boolean;
   sources: any[];
+  qualityMetrics?: QualityMetrics | null;
 };
 
 export function WorkspaceTabs({
@@ -26,7 +28,8 @@ export function WorkspaceTabs({
   errors,
   verified,
   running,
-  sources
+  sources,
+  qualityMetrics
 }: Props) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('answer');
 
@@ -77,6 +80,7 @@ export function WorkspaceTabs({
             errors={errors}
             verified={verified}
             running={running}
+            qualityMetrics={qualityMetrics}
           />
         )}
         

@@ -49,7 +49,7 @@ export function ParserStatsPanel() {
   }, []);
 
   return (
-    <section className="panel panel-bottom">
+    <section>
       <div className="panel-header split">
         <h2>Parser Observability</h2>
         <button className="btn btn-secondary" onClick={load} disabled={loading}>
@@ -57,7 +57,7 @@ export function ParserStatsPanel() {
         </button>
       </div>
 
-      <div className="panel-body gap-md">
+      <div className="panel-body gap-md" style={{ paddingTop: 0 }}>
         {error ? <div className="notice notice-error">{error}</div> : null}
 
         {loading && !data ? (

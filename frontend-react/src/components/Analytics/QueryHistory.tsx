@@ -33,6 +33,39 @@ export function QueryHistory({ onQuerySelect }: Props) {
     return `${(ms / 1000).toFixed(1)}s`;
   }
 
+  function getQualityBadge(score?: number) {
+    if (score === undefined || score === null) return null;
+    
+    const percentage = Math.round(score * 100);
+    let label = '';
+    let className = 'pill-neutral';
+    let emoji = '⭐';
+    
+    if (score >= 0.85) {
+      label = 'Excellent';
+      className = 'pill-success';
+      emoji = '⭐⭐⭐⭐⭐';
+    } else if (score >= 0.70) {
+      label = 'Good';
+      className = 'pill pill-good';
+      emoji = '⭐⭐⭐⭐';
+    } else if (score >= 0.50) {
+      label = 'Fair';
+      className = 'pill-warn';
+      emoji = '⭐⭐⭐';
+    } else {
+      label = 'Poor';
+      className = 'pill pill-poor';
+      emoji = '⭐⭐';
+    }
+    
+    return (
+      <span className={className} title={`Faithfulness: ${Math.round((score || 0) * 100)}%`}>
+        {emoji} {label} ({percentage}%)
+      </span>
+    );
+  }
+
   return (
     <div className="query-history">
       <div className="history-header">
@@ -61,6 +94,7 @@ export function QueryHistory({ onQuerySelect }: Props) {
                   {new Date(item.timestamp).toLocaleString()}
                 </span>
                 <div className="history-badges">
+                  {getQualityBadge(item.overall_quality_score)}
                   {item.verified !== undefined && (
                     <span className={`pill ${item.verified ? 'pill-success' : 'pill-warn'}`}>
                       {item.verified ? '✓ Verified' : '⚠ Unverified'}

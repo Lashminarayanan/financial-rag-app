@@ -30,5 +30,6 @@ export const config = {
   python: resolvePythonPath(),
   queryWorker: process.env.RAG_PYTHON_ENTRY || '../rag/app/query_worker.py',
   ingestWorker: process.env.RAG_INGEST_WORKER_ENTRY || '../rag/app/ingest_worker.py',
+  financialCsvIngestWorker: process.env.FINANCIAL_CSV_INGEST_WORKER || '../rag/ingest_financial_csv.py',
   reportsUploadDir: resolveProjectPath(process.env.REPORTS_DIR, './sample_data/reports')
 };

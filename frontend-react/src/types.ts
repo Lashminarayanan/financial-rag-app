@@ -20,12 +20,21 @@ export type SourceItem = {
   similarity?: number | null;
 };
 
+export type QualityMetrics = {
+  faithfulness: number;
+  answer_relevancy: number;
+  context_precision: number;
+  overall_score: number;
+  error?: string;
+};
+
 export type PlanEvent = { type: 'plan'; plan: string[] };
 export type SourcesEvent = { type: 'sources'; sources: SourceItem[] };
 export type ComparisonEvent = { type: 'comparison'; notes: string[] };
 export type TokenEvent = { type: 'token'; token: string };
-export type FinalEvent = { type: 'final'; answer: string; verified?: boolean; warnings?: string[] };
+export type FinalEvent = { type: 'final'; answer: string; verified?: boolean; warnings?: string[]; quality_metrics?: QualityMetrics };
+export type QualityEvent = { type: 'quality'; metrics: QualityMetrics };
 export type StderrEvent = { type: 'stderr'; message: string };
 export type DoneEvent = { type: 'done'; exitCode?: number | null; signal?: string | null };
 
-export type StreamEvent = StatusEvent | PlanEvent | SourcesEvent | ComparisonEvent | TokenEvent | FinalEvent | StderrEvent | DoneEvent;
+export type StreamEvent = StatusEvent | PlanEvent | SourcesEvent | ComparisonEvent | TokenEvent | FinalEvent | QualityEvent | StderrEvent | DoneEvent;

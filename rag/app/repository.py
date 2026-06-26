@@ -36,7 +36,7 @@ def insert_document_with_chunks(document: Dict, embeddings: List[List[float]]) -
     parser_reason = parser_decision.get("reason")
     parser_probe = parser_decision.get("probe_metrics", {})
     ingestion_stats = build_ingestion_stats(document)
-   
+    
     # Extract page_count from probe_metrics
     page_count = parser_probe.get("total_pages") if parser_probe else None
 
