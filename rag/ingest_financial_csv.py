@@ -17,21 +17,21 @@ project_root = Path(__file__).resolve().parent
 sys.path.insert(0, str(project_root))
 
 try:
-    import psycopg2
-    from psycopg2.extras import execute_values
+    import psycopg
 except ImportError:
-    print("Error: psycopg2 not installed. Run: pip install psycopg2-binary")
+    print("Error: psycopg not installed. Run: pip install psycopg-binary")
     sys.exit(1)
 
 
 def get_connection():
     """Connect to PostgreSQL"""
-    return psycopg2.connect(
+    return psycopg.connect(
         host=os.getenv('POSTGRES_HOST', 'localhost'),
         port=int(os.getenv('POSTGRES_PORT', 5433)),
-        database=os.getenv('POSTGRES_DB', 'financial_rag'),
+        dbname=os.getenv('POSTGRES_DB', 'financial_rag'),
         user=os.getenv('POSTGRES_USER', 'postgres'),
-        password=os.getenv('POSTGRES_PASSWORD', 'postgres')
+        password=os.getenv('POSTGRES_PASSWORD', 'postgres'),
+        autocommit=False
     )
 
 
@@ -380,3 +380,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
