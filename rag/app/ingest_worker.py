@@ -61,16 +61,19 @@ def main():
 
     embeddings = []
     total = len(texts)
-    for idx, text in enumerate(texts, start=1):
-        embedding = embed_texts([text])[0]
-        embeddings.append(embedding)
+    BATCH_SIZE = 10
+    for i in range(0, total, BATCH_SIZE):
+        batch = texts[i:i + BATCH_SIZE]
+        batch_embeddings = embed_texts(batch)
+        embeddings.extend(batch_embeddings)
+        done = min(i + BATCH_SIZE, total)
         emit({
             'type': 'progress',
             'stage': 'embedding',
-            'message': f'Embedding chunk {idx} of {total}',
-            'current': idx,
+            'message': f'Embedded {done} of {total} chunks',
+            'current': done,
             'total': total,
-            'percent': round((idx / total) * 100, 2) if total else 100
+            'percent': round((done / total) * 100, 2) if total else 100
         })
 
     emit({'type': 'status', 'stage': 'persisting', 'message': 'Writing chunks and embeddings to PostgreSQL'})
