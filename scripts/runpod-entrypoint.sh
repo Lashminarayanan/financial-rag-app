@@ -40,7 +40,7 @@ echo "[1/4] Starting PostgreSQL..."
 # Initialize DB if not already done
 if [ ! -f "$PGDATA/PG_VERSION" ]; then
     echo "[postgres] Initializing database cluster..."
-    sudo -u postgres /usr/lib/postgresql/16/bin/initdb -D "$PGDATA" --encoding=UTF8 --locale=en_US.UTF-8
+    sudo -u postgres /usr/lib/postgresql/16/bin/initdb -D "$PGDATA" --encoding=UTF8 --locale=C.UTF-8
 
     # Configure PostgreSQL
     echo "host all all 0.0.0.0/0 md5" >> "$PGDATA/pg_hba.conf"
