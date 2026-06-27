@@ -371,3 +371,113 @@ def format_cash_flow(data: Dict) -> str:
         parts.append(f"  • Capex: ₹{data['capex']:.2f} Cr")
     
     return '\n'.join(parts)
+
+
+def query_comprehensive_forensic_data(
+    company_ticker: str = 'EICHERMOT',
+    fiscal_years: Optional[List[int]] = None,
+    limit: int = 10
+) -> List[Dict[str, Any]]:
+    """
+    Query comprehensive financial data for forensic analysis.
+    Joins income statement, balance sheet, and cash flow data.
+    
+    Returns list of dicts with all key metrics per period for forensic checks.
+    """
+    conn = get_conn()
+    cursor = conn.cursor()
+    
+    try:
+        query = """
+            SELECT 
+                c.company_name,
+                c.ticker,
+                fp.fiscal_year,
+                fp.period_type,
+                -- Income Statement
+                i.sales,
+                i.other_income,
+                i.operating_profit,
+                i.net_profit,
+                i.eps,
+                i.depreciation,
+                i.operating_margin_pct,
+                i.net_margin_pct,
+                -- Balance Sheet
+                b.total_assets,
+                b.total_liabilities,
+                b.equity_share_capital,
+                b.reserves,
+                b.borrowings,
+                b.net_fixed_assets,
+                b.capital_wip,
+                b.inventory,
+                b.receivables,
+                b.cash_and_equivalents,
+                -- Cash Flow
+                cf.operating_cash_flow,
+                cf.free_cash_flow,
+                cf.capex
+            FROM financial_periods fp
+            JOIN companies c ON fp.company_id = c.id
+            LEFT JOIN income_statements i ON i.period_id = fp.id
+            LEFT JOIN balance_sheets b ON b.period_id = fp.id
+            LEFT JOIN cash_flows cf ON cf.period_id = fp.id
+            WHERE c.ticker = %s
+              AND fp.period_type = 'annual'
+        """
+        
+        params = [company_ticker]
+        
+        if fiscal_years:
+            placeholders = ','.join(['%s'] * len(fiscal_years))
+            query += f" AND fp.fiscal_year IN ({placeholders})"
+            params.extend(fiscal_years)
+        
+        query += " ORDER BY fp.fiscal_year DESC LIMIT %s"
+        params.append(limit)
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        
+        results = []
+        for row in rows:
+            equity = (float(row[14]) if row[14] else 0) + (float(row[15]) if row[15] else 0)
+            
+            results.append({
+                'company_name': row[0],
+                'ticker': row[1],
+                'fiscal_year': row[2],
+                'period_type': row[3],
+                # P&L
+                'sales': float(row[4]) if row[4] else None,
+                'other_income': float(row[5]) if row[5] else None,
+                'operating_profit': float(row[6]) if row[6] else None,
+                'net_profit': float(row[7]) if row[7] else None,
+                'eps': float(row[8]) if row[8] else None,
+                'depreciation': float(row[9]) if row[9] else None,
+                'operating_margin_pct': float(row[10]) if row[10] else None,
+                'net_margin_pct': float(row[11]) if row[11] else None,
+                # Balance Sheet
+                'total_assets': float(row[12]) if row[12] else None,
+                'total_liabilities': float(row[13]) if row[13] else None,
+                'equity_share_capital': float(row[14]) if row[14] else None,
+                'reserves': float(row[15]) if row[15] else None,
+                'borrowings': float(row[16]) if row[16] else None,
+                'net_fixed_assets': float(row[17]) if row[17] else None,
+                'capital_wip': float(row[18]) if row[18] else None,
+                'inventory': float(row[19]) if row[19] else None,
+                'receivables': float(row[20]) if row[20] else None,
+                'cash_and_equivalents': float(row[21]) if row[21] else None,
+                'total_equity': equity,
+                # Cash Flow
+                'operating_cash_flow': float(row[22]) if row[22] else None,
+                'free_cash_flow': float(row[23]) if row[23] else None,
+                'capex': float(row[24]) if row[24] else None,
+            })
+        
+        return results
+        
+    finally:
+        cursor.close()
+        conn.close()

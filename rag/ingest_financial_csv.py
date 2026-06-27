@@ -50,75 +50,32 @@ def parse_csv_value(value: str) -> Optional[float]:
         return None
 
 
-def extract_company_metadata(csv_path: Path) -> Dict[str, Any]:
-    """Extract company metadata from CSV header"""
-    metadata = {
-        'company_name': None,
-        'sector': 'Unknown',
-        'industry': 'Unknown',
-        'face_value': 1.0,
-        'shares_outstanding': 0.0
-    }
-    
-    with open(csv_path, 'r', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        for line in reader:
-            if len(line) >= 2:
-                key = str(line[0]).strip().upper()
-                value = str(line[1]).strip() if line[1] else ''
-                
-                if 'COMPANY NAME' in key:
-                    metadata['company_name'] = value
-                elif 'SECTOR' in key:
-                    metadata['sector'] = value if value else 'Unknown'
-                elif 'INDUSTRY' in key:
-                    metadata['industry'] = value if value else 'Unknown'
-                elif 'FACE VALUE' in key:
-                    try:
-                        metadata['face_value'] = float(value.replace(',', ''))
-                    except:
-                        metadata['face_value'] = 1.0
-                elif ('NUMBER OF SHARES' in key) or ('SHARES OUTSTANDING' in key):
-                    try:
-                        metadata['shares_outstanding'] = float(value.replace(',', ''))
-                    except:
-                        metadata['shares_outstanding'] = 0.0
-    
-    return metadata
-
-
 def parse_period_from_column(col_name: str) -> Tuple[Optional[datetime], str, Optional[int], Optional[int]]:
     """
-    Parse period information from column name
-    Supports formats: 'Mar-17', 'Dec-23', '2017-03-31 00:00:00', '2024-06-30 00:00:00'
+    Parse period information from column name (e.g., 'Mar-17', 'Dec-23')
     Returns: (period_date, period_type, fiscal_year, quarter)
     """
     col_name = str(col_name).strip()
     
-    # Try ISO date format first (2017-03-31 00:00:00)
-    iso_match = re.match(r'(\d{4})-(\d{2})-(\d{2})', col_name)
-    if iso_match:
-        year, month, day = map(int, iso_match.groups())
-    else:
-        # Try abbreviated format (Mar-17)
-        abbr_match = re.match(r'([A-Z][a-z]{2})-(\d{2})', col_name)
-        if not abbr_match:
-            return None, 'annual', None, None
-        
-        month_abbr, year_suffix = abbr_match.groups()
-        
-        # Month mapping
-        months = {
-            'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-            'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
-        }
-        
-        month = months.get(month_abbr)
-        if not month:
-            return None, 'annual', None, None
-        
-        # Convert year (17 -> 2017, 26 -> 2026)
-        year = 2000 + int(year_suffix)
+    # Match patterns like "Mar-17", "Dec-23"
+    match = re.match(r'([A-Z][a-z]{2})-(\d{2})', col_name)
+    if not match:
+        return None, 'annual', None, None
+    
+    month_abbr, year_suffix = match.groups()
+    
+    # Month mapping
+    months = {
+        'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+        'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+    }
+    
+    month = months.get(month_abbr)
+    if not month:
+        return None, 'annual', None, None
+    
+    # Convert year (17 -> 2017, 26 -> 2026)
+    year = 2000 + int(year_suffix)
     
     # Determine fiscal year and quarter (assuming March year-end)
     if month == 3:
@@ -188,11 +145,6 @@ def read_csv_sections(csv_path: Path) -> Dict[str, List[Dict]]:
                 sections[current_section] = {'header': None, 'rows': []}
                 i += 1
                 continue
-            elif 'PRICE:' in first_cell or 'PRICE' in first_cell:
-                current_section = 'prices'
-                sections[current_section] = {'header': None, 'rows': []}
-                i += 1
-                continue
             
             # Check if this is a data row
             if current_section and line[0].strip():
@@ -222,31 +174,18 @@ def load_financial_data(csv_path: Path, company_name: str, ticker: str):
     cursor = conn.cursor()
     
     try:
-        # Extract company metadata from CSV
-        metadata = extract_company_metadata(csv_path)
-        if metadata['company_name']:
-            company_name = metadata['company_name']
-        
-        # 1. Insert or get company with full metadata
+        # 1. Insert or get company
         cursor.execute("""
-            INSERT INTO companies (ticker, company_name, sector, industry, face_value, shares_outstanding)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO companies (ticker, company_name, sector, industry, shares_outstanding)
+            VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (ticker) DO UPDATE SET 
                 company_name = EXCLUDED.company_name,
-                sector = EXCLUDED.sector,
-                industry = EXCLUDED.industry,
-                face_value = EXCLUDED.face_value,
                 shares_outstanding = EXCLUDED.shares_outstanding
             RETURNING id
-        """, (ticker, company_name, metadata['sector'], metadata['industry'], 
-              metadata['face_value'], metadata['shares_outstanding']))
+        """, (ticker, company_name, 'Automotive', 'Two-Wheelers', 27.43))
         
         company_id = cursor.fetchone()[0]
         print(f"Company ID: {company_id}")
-        print(f"  Sector: {metadata['sector']}")
-        print(f"  Industry: {metadata['industry']}")
-        print(f"  Face Value: Rs. {metadata['face_value']}")
-        print(f"  Shares Outstanding: {metadata['shares_outstanding']} Cr")
         
         # 2. Read and parse CSV sections
         sections = read_csv_sections(csv_path)
@@ -260,33 +199,6 @@ def load_financial_data(csv_path: Path, company_name: str, ticker: str):
             
             header = section_data['header']
             rows = section_data['rows']
-            
-            # Handle PRICE section differently for market data
-            if section_name == 'prices':
-                price_row = None
-                for row in rows:
-                    if row and 'PRICE' in str(row[0]).upper():
-                        price_row = row
-                        break
-                
-                if price_row:
-                    for idx, col in enumerate(header):
-                        period_info = parse_period_from_column(col)
-                        period_date = period_info[0]
-                        if period_date and idx < len(price_row):
-                            price = parse_csv_value(price_row[idx])
-                            if price and metadata['shares_outstanding'] > 0:
-                                market_cap = price * metadata['shares_outstanding']
-                                # Insert market data
-                                cursor.execute("""
-                                    INSERT INTO market_data (company_id, date, closing_price, market_cap)
-                                    VALUES (%s, %s, %s, %s)
-                                    ON CONFLICT (company_id, date) DO UPDATE SET
-                                        closing_price = EXCLUDED.closing_price,
-                                        market_cap = EXCLUDED.market_cap
-                                """, (company_id, period_date, price, market_cap))
-                print(f"  Processed {section_name}: market data")
-                continue
             
             # Find period columns (Mar-17, Dec-23, etc.)
             period_columns = []
@@ -348,24 +260,6 @@ def load_financial_data(csv_path: Path, company_name: str, ticker: str):
 
 def insert_income_statement(cursor, period_id: str, metrics: Dict[str, float]):
     """Insert P&L data into income_statements table"""
-    # Handle field name variations
-    sales = metrics.get('Sales')
-    raw_material = metrics.get('Raw Material Cost')
-    inventory_change = metrics.get('Change in Inventory')
-    power_fuel = metrics.get('Power and Fuel') or metrics.get('Power & Fuel')
-    employee_cost = metrics.get('Employee Cost')
-    selling_admin = metrics.get('Selling and admin') or metrics.get('Selling & Admin')
-    other_expenses = metrics.get('Other Expenses')
-    other_income = metrics.get('Other Income')
-    depreciation = metrics.get('Depreciation')
-    interest = metrics.get('Interest')
-    pbt = metrics.get('Profit before tax') or metrics.get('Profit Before Tax')
-    tax = metrics.get('Tax')
-    net_profit = metrics.get('Net profit') or metrics.get('Net Profit')
-    operating_profit = metrics.get('Operating Profit')  # May not exist in annual data
-    ebitda = metrics.get('EBITDA')  # May not exist
-    eps = metrics.get('EPS')  # May not exist
-    
     cursor.execute("""
         INSERT INTO income_statements (
             period_id, sales, raw_material_cost, change_in_inventory,
@@ -381,30 +275,27 @@ def insert_income_statement(cursor, period_id: str, metrics: Dict[str, float]):
             eps = EXCLUDED.eps
     """, (
         period_id,
-        sales, raw_material, inventory_change, power_fuel,
-        employee_cost, selling_admin, other_expenses, other_income,
-        depreciation, interest, pbt, tax, net_profit,
-        operating_profit, ebitda, eps
+        metrics.get('Sales'),
+        metrics.get('Raw Material Cost'),
+        metrics.get('Change in Inventory'),
+        metrics.get('Power and Fuel'),
+        metrics.get('Employee Cost'),
+        metrics.get('Selling and admin'),
+        metrics.get('Other Expenses'),
+        metrics.get('Other Income'),
+        metrics.get('Depreciation'),
+        metrics.get('Interest'),
+        metrics.get('Profit before tax'),
+        metrics.get('Tax'),
+        metrics.get('Net profit'),
+        metrics.get('Operating Profit'),
+        metrics.get('EBITDA'),
+        metrics.get('EPS')
     ))
 
 
 def insert_balance_sheet(cursor, period_id: str, metrics: Dict[str, float]):
     """Insert balance sheet data"""
-    # Fix duplicate 'Total' bug - calculate total_liabilities from components
-    equity_share = metrics.get('Equity Share Capital')
-    reserves = metrics.get('Reserves')
-    borrowings = metrics.get('Borrowings')
-    other_liabilities = metrics.get('Other Liabilities')
-    
-    # Total appears twice in CSV (once for liabilities, once for assets)
-    # Use the value from 'Total' as total_assets (last occurrence in CSV)
-    total_assets = metrics.get('Total')
-    
-    # Calculate total_liabilities from components
-    total_liabilities = None
-    if all(v is not None for v in [equity_share, reserves, borrowings, other_liabilities]):
-        total_liabilities = equity_share + reserves + borrowings + other_liabilities
-    
     cursor.execute("""
         INSERT INTO balance_sheets (
             period_id, equity_share_capital, reserves, borrowings,
@@ -419,16 +310,16 @@ def insert_balance_sheet(cursor, period_id: str, metrics: Dict[str, float]):
             total_assets = EXCLUDED.total_assets
     """, (
         period_id,
-        equity_share,
-        reserves,
-        borrowings,
-        other_liabilities,
-        total_liabilities,
+        metrics.get('Equity Share Capital'),
+        metrics.get('Reserves'),
+        metrics.get('Borrowings'),
+        metrics.get('Other Liabilities'),
+        metrics.get('Total'),  # Total liabilities
         metrics.get('Net Block'),
         metrics.get('Capital Work in Progress'),
         metrics.get('Investments'),
         metrics.get('Other Assets'),
-        total_assets,
+        metrics.get('Total'),  # Total assets (same metric name in CSV)
         metrics.get('Receivables'),
         metrics.get('Inventory'),
         metrics.get('Cash & Bank')
@@ -437,12 +328,6 @@ def insert_balance_sheet(cursor, period_id: str, metrics: Dict[str, float]):
 
 def insert_cash_flow(cursor, period_id: str, metrics: Dict[str, float]):
     """Insert cash flow data"""
-    # CSV uses full field names: "Cash from Operating Activity", etc.
-    operating = metrics.get('Cash from Operating Activity') or metrics.get('Operating Activities')
-    investing = metrics.get('Cash from Investing Activity') or metrics.get('Investing Activities')
-    financing = metrics.get('Cash from Financing Activity') or metrics.get('Financing Activities')
-    net_cash = metrics.get('Net Cash Flow')
-    
     cursor.execute("""
         INSERT INTO cash_flows (
             period_id, operating_cash_flow, investing_cash_flow,
@@ -453,10 +338,10 @@ def insert_cash_flow(cursor, period_id: str, metrics: Dict[str, float]):
             net_cash_flow = EXCLUDED.net_cash_flow
     """, (
         period_id,
-        operating,
-        investing,
-        financing,
-        net_cash
+        metrics.get('Operating Activities'),
+        metrics.get('Investing Activities'),
+        metrics.get('Financing Activities'),
+        metrics.get('Net Cash Flow')
     ))
 
 
@@ -465,11 +350,11 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(
-        description='Ingest financial CSV data into database with automatic metadata extraction'
+        description='Ingest Eicher_data_sheet.csv financial data into database'
     )
-    parser.add_argument('--file', required=True, help='Path to financial CSV file')
-    parser.add_argument('--company', help='Company name (auto-extracted if not provided)')
-    parser.add_argument('--ticker', help='Stock ticker symbol (required if not in CSV)')
+    parser.add_argument('--file', required=True, help='Path to Eicher_data_sheet.csv file')
+    parser.add_argument('--company', default='EICHER MOTORS LTD', help='Company name')
+    parser.add_argument('--ticker', default='EICHERMOT', help='Stock ticker symbol')
     
     args = parser.parse_args()
     
@@ -478,27 +363,15 @@ def main():
         print(f"Error: File not found: {csv_path}")
         sys.exit(1)
     
-    # Extract metadata to determine company name and ticker if not provided
-    metadata = extract_company_metadata(csv_path)
-    
-    company_name = args.company or metadata.get('company_name') or 'UNKNOWN COMPANY'
-    
-    # Ticker is required - try args, then derive from filename
-    ticker = args.ticker
-    if not ticker:
-        # Try to derive from filename
-        ticker = csv_path.stem.replace(' ', '').replace('-', '').upper()[:10]
-        print(f"⚠ No ticker provided, using filename-derived: {ticker}")
-    
     print("=" * 70)
     print("FINANCIAL DATA INGESTION")
     print("=" * 70)
     print(f"File: {csv_path}")
-    print(f"Company: {company_name}")
-    print(f"Ticker: {ticker}")
+    print(f"Company: {args.company}")
+    print(f"Ticker: {args.ticker}")
     print("=" * 70)
     
-    load_financial_data(csv_path, company_name, ticker)
+    load_financial_data(csv_path, args.company, args.ticker)
     
     print("=" * 70)
     print("INGESTION COMPLETE")

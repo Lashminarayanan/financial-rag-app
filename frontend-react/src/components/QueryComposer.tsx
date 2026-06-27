@@ -53,6 +53,7 @@ export function QueryComposer({ query, onChange, analysisMode, onModeChange, onR
               <option value="profitability">📊 Profitability Analyst</option>
               <option value="risk">⚠️ Risk Analyst</option>
               <option value="valuation">💎 Valuation Analyst</option>
+              <option value="forensic">🔬 Forensic Financial Analyst</option>
             </select>
           </div>
           <textarea

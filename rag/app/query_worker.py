@@ -33,7 +33,7 @@ def emit(payload):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--query", required=True)
-    parser.add_argument("--mode", default="general", choices=["general", "revenue", "profitability", "risk", "valuation"], help="Analysis mode persona")
+    parser.add_argument("--mode", default="general", choices=["general", "revenue", "profitability", "risk", "valuation", "forensic"], help="Analysis mode persona")
     args = parser.parse_args()
 
     graph = build_graph()
@@ -44,6 +44,7 @@ def main():
         "plan": [],
         "evidence": [],
         "financial_data": [],  # NEW: Structured SQL data
+        "forensic_report": None,  # NEW: Forensic analysis results
         "comparison_notes": [],
         "system_prompt": "",
         "user_prompt": "",
@@ -90,6 +91,13 @@ def main():
         "message": "Prepared comparison notes"
     })
     emit({"type": "comparison", "notes": result["comparison_notes"]})
+
+    # Emit forensic report if forensic mode was used
+    if result.get('forensic_report'):
+        emit({
+            "type": "forensic",
+            "report": result['forensic_report']
+        })
 
     emit({
         "type": "status",

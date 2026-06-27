@@ -3,6 +3,7 @@ import { useResearchStream } from '../hooks/useResearchStream';
 import { QueryComposer } from '../components/QueryComposer';
 import { WorkspaceTabs } from '../components/WorkspaceTabs';
 import { InsightsTable } from '../components/InsightsTable';
+import { ForensicReport } from '../components/ForensicReport';
 
 export function ResearchView() {
   const vm = useResearchStream();
@@ -49,6 +50,8 @@ export function ResearchView() {
         sources={vm.sources}
         qualityMetrics={vm.qualityMetrics}
       />
+
+      {vm.forensicReport && <ForensicReport report={vm.forensicReport} />}
 
       <InsightsTable metrics={vm.metrics} />
     </div>

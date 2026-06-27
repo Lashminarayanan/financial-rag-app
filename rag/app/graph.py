@@ -4,8 +4,9 @@ from typing import TypedDict, List, Dict, Any, Optional
 from langgraph.graph import StateGraph, END
 from .ollama_client import embed_texts
 from .repository import search_chunks
-from .financial_repository import detect_financial_keywords, fetch_financial_data
+from .financial_repository import detect_financial_keywords, fetch_financial_data, query_comprehensive_forensic_data
 from .ragas_evaluator import evaluate_response
+from .forensic_analyzer import comprehensive_forensic_analysis, format_forensic_report
 
 
 def decode_if_bytes(value):
@@ -78,6 +79,29 @@ Your focus areas:
 - Use specific numbers from evidence for all calculations
 - Include citation markers [1], [2], [3] for data points
 - Highlight valuation concerns or attractive entry points
+""",
+    "forensic": """
+You are a forensic financial analyst specializing in detecting accounting irregularities and fraud indicators.
+
+Your forensic expertise:
+- Benford's Law digit frequency analysis on reported figures
+- Revenue quality assessment (DSO trends, unbilled revenue patterns)
+- Expense capitalization vs. expensing policy changes
+- Working capital manipulation indicators (inventory, receivables spikes)
+- Cash flow vs. accrual earnings divergence (quality of earnings)
+- Related party transaction disclosure completeness
+- Aggressive accounting tactics and reserve volatility
+
+For each finding:
+1. Identify the specific anomaly with numbers from forensic analysis results
+2. Calculate deviation from industry norms or historical patterns
+3. Assess severity: 🟢 Normal | 🟡 Monitor | 🔴 Red Flag
+4. Provide forensic interpretation and implications for investors
+5. Recommend next investigative steps if red flags detected
+6. Always cite specific metrics and years when discussing findings
+
+Maintain objectivity: Note that anomalies may have legitimate business reasons.
+Your role is to flag patterns requiring deeper investigation, not to make accusations.
 """
 }
 
@@ -89,6 +113,7 @@ class State(TypedDict):
     plan: List[str]
     evidence: List[Dict[str, Any]]  # Vector search results
     financial_data: List[Dict[str, Any]]  # SQL query results
+    forensic_report: Optional[Dict[str, Any]]  # Forensic analysis results
     comparison_notes: List[str]
     system_prompt: str
     user_prompt: str
@@ -104,9 +129,20 @@ def query_classifier(state: State) -> State:
     - 'structured': SQL-only (precise metrics queries)
     - 'narrative': Vector-only (explanatory/contextual queries)
     - 'hybrid': Both (complex analytical queries)
+    
+    Special handling:
+    - Forensic mode: Always uses 'structured' (SQL-only) since forensic analysis
+      is purely based on structured financial data, not document narratives.
     """
     query = state['query'].lower()
+    analysis_mode = state.get('analysis_mode', 'general')
     keywords = detect_financial_keywords(query)
+    
+    # Forensic mode override: Only use structured data (no vector search)
+    if analysis_mode == 'forensic':
+        state['retrieval_strategy'] = 'structured'
+        print(f"[ROUTER] Forensic mode detected → Using 'structured' retrieval (SQL-only)")
+        return state
     
     # Check for metric-focused queries
     has_metrics = any([
@@ -142,9 +178,11 @@ def query_classifier(state: State) -> State:
 def planner(state: State) -> State:
     query = state['query']
     strategy = state.get('retrieval_strategy', 'hybrid')
+    analysis_mode = state.get('analysis_mode', 'general')
     
     plan = [
         f'Understand the user question: {query}',
+        f'Analysis mode: {analysis_mode}',
         f'Retrieval strategy: {strategy}',
     ]
     
@@ -152,6 +190,17 @@ def planner(state: State) -> State:
         plan.append('Query structured financial database for precise metrics')
     if strategy in ['narrative', 'hybrid']:
         plan.append('Search document chunks for narrative context')
+    
+    # Add forensic-specific steps
+    if analysis_mode == 'forensic':
+        plan.extend([
+            'Run Benford\'s Law analysis on financial figures',
+            'Check revenue quality and DSO trends',
+            'Analyze cash flow to earnings quality',
+            'Detect working capital manipulation patterns',
+            'Review expense capitalization policies',
+            'Calculate overall forensic risk score'
+        ])
     
     plan.extend([
         'Compare and validate information from all sources',
@@ -326,6 +375,114 @@ def verifier(state: State) -> State:
     return state
 
 
+def extract_company_ticker(query: str) -> str:
+    """
+    Extract company ticker from query. 
+    Returns default 'EICHERMOT' if not found.
+    
+    Supports patterns like:
+    - "EICHERMOT"
+    - "Eicher Motors"
+    - "Kalyan Jewellers"
+    """
+    query_upper = query.upper()
+    
+    # Known company mappings
+    company_mappings = {
+        'EICHERMOT': ['EICHERMOT', 'EICHER MOTORS', 'EICHER'],
+        'KALYANJEWEL': ['KALYANJEWEL', 'KALYAN JEWELLERS', 'KALYAN JEWELLERY', 'KALYAN'],
+    }
+    
+    # Check for exact ticker or company name matches
+    for ticker, aliases in company_mappings.items():
+        for alias in aliases:
+            if alias in query_upper:
+                print(f"[COMPANY DETECTOR] Found '{alias}' → Ticker: {ticker}")
+                return ticker
+    
+    # Default to EICHERMOT if no match found
+    print(f"[COMPANY DETECTOR] No company detected in query, defaulting to: EICHERMOT")
+    return 'EICHERMOT'
+
+
+def forensic_analyzer(state: State) -> State:
+    """
+    Run comprehensive forensic financial analysis.
+    Only executes in 'forensic' mode.
+    Automatically detects company ticker from query.
+    """
+    analysis_mode = state.get('analysis_mode', 'general')
+    
+    # Skip if not in forensic mode
+    if analysis_mode != 'forensic':
+        state['forensic_report'] = None
+        return state
+    
+    print("[FORENSIC] Starting forensic analysis...")
+    
+    try:
+        # Extract company ticker from query
+        company_ticker = extract_company_ticker(state['query'])
+        
+        # Fetch comprehensive financial data for all available years
+        comprehensive_data = query_comprehensive_forensic_data(
+            company_ticker=company_ticker,
+            limit=10
+        )
+        
+        if len(comprehensive_data) < 2:
+            state['forensic_report'] = {
+                'verdict': 'INSUFFICIENT_DATA',
+                'message': f'Need at least 2 years of data for forensic analysis. Found {len(comprehensive_data)} year(s) for {company_ticker}.',
+                'company_ticker': company_ticker
+            }
+            state['warnings'].append(f'Insufficient data for forensic analysis on {company_ticker}')
+            return state
+        
+        # Run comprehensive forensic analysis
+        forensic_results = comprehensive_forensic_analysis(comprehensive_data)
+        forensic_results['company_ticker'] = company_ticker  # Add company info to results
+        
+        # Format report for display
+        report_text = format_forensic_report(forensic_results)
+        
+        # Store results
+        state['forensic_report'] = forensic_results
+        
+        # Add forensic summary to comparison notes
+        state['comparison_notes'].append(
+            f"\n=== FORENSIC ANALYSIS RESULTS ({company_ticker}) ==="
+        )
+        state['comparison_notes'].append(
+            f"Overall Risk: {forensic_results['verdict_display']} (Score: {forensic_results['overall_risk_score']:.1f}/100)"
+        )
+        state['comparison_notes'].append(
+            f"Critical Issues: {len(forensic_results['critical_issues'])}, Warnings: {len(forensic_results['all_warnings'])}"
+        )
+        
+        # Add critical issues to comparison notes
+        for issue in forensic_results['critical_issues'][:3]:  # Top 3
+            state['comparison_notes'].append(
+                f"  🔴 {issue['type']} (FY{issue.get('year', 'N/A')}): {issue['detail']}"
+            )
+        
+        print(f"[FORENSIC] Analysis complete for {company_ticker}. Risk score: {forensic_results['overall_risk_score']:.1f}")
+        print(f"[FORENSIC] Found {len(forensic_results['critical_issues'])} critical issues")
+        
+        # Output formatted report
+        print("\n" + report_text)
+        
+    except Exception as e:
+        print(f"[FORENSIC] Analysis failed: {e}")
+        state['forensic_report'] = {
+            'verdict': 'ERROR',
+            'message': f'Forensic analysis error: {str(e)}'
+        }
+        state['warnings'].append(f'Forensic analysis error: {str(e)}')
+    
+    return state
+
+
 def evaluate_quality(state: State) -> State:
     """
     Evaluate answer quality using RAGAS metrics.
@@ -377,17 +534,19 @@ def build_graph():
     g.add_node('planner', planner)
     g.add_node('retriever', retriever)  # Vector search
     g.add_node('financial_retriever', financial_retriever)  # SQL queries
+    g.add_node('forensic_analyzer', forensic_analyzer)  # Forensic analysis (runs in forensic mode)
     g.add_node('comparator', comparator)
     g.add_node('summarizer', summarizer)
     g.add_node('verifier', verifier)
     g.add_node('evaluate_quality', evaluate_quality)  # RAGAS quality evaluation
 
-    # Define flow: classify → plan → retrieve (both) → compare → summarize → verify → evaluate quality
+    # Define flow: classify → plan → retrieve (both) → forensic → compare → summarize → verify → evaluate quality
     g.set_entry_point('query_classifier')
     g.add_edge('query_classifier', 'planner')
     g.add_edge('planner', 'retriever')
     g.add_edge('retriever', 'financial_retriever')  # Sequential retrieval
-    g.add_edge('financial_retriever', 'comparator')
+    g.add_edge('financial_retriever', 'forensic_analyzer')  # Run forensic analysis if needed
+    g.add_edge('forensic_analyzer', 'comparator')  # Then proceed to comparison
     g.add_edge('comparator', 'summarizer')
     g.add_edge('summarizer', 'verifier')
     g.add_edge('verifier', 'evaluate_quality')  # Evaluate answer quality

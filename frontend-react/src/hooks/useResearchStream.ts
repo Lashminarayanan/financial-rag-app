@@ -15,6 +15,7 @@ export function useResearchStream() {
   const [comparison, setComparison] = useState<string[]>([]);
   const [verified, setVerified] = useState<boolean | undefined>(undefined);
   const [qualityMetrics, setQualityMetrics] = useState<QualityMetrics | null>(null);
+  const [forensicReport, setForensicReport] = useState<any>(null);
 
   const metrics = useMemo(() => {
     const rows = sources
@@ -35,6 +36,7 @@ export function useResearchStream() {
     setComparison([]);
     setVerified(undefined);
     setQualityMetrics(null);
+    setForensicReport(null);
 
     try {
       await streamResearch({ query, analysisMode }, (eventType, payload) => {
@@ -48,6 +50,9 @@ export function useResearchStream() {
           setSources(payload.sources || []);
         } else if (eventType === 'comparison') {
           setComparison(payload.notes || []);
+        } else if (eventType === 'forensic') {
+          console.log('[FORENSIC] Forensic report received:', payload.report);
+          setForensicReport(payload.report || null);
         } else if (eventType === 'token') {
           setAnswer((prev) => prev + (payload.token || ''));
         } else if (eventType === 'final') {
@@ -81,6 +86,7 @@ export function useResearchStream() {
     setStatusLog([]);
     setWarnings([]);
     setQualityMetrics(null);
+    setForensicReport(null);
   }
 
   return {
@@ -98,6 +104,7 @@ export function useResearchStream() {
     comparison,
     verified,
     qualityMetrics,
+    forensicReport,
     errors,
     comparison,
     verified,
