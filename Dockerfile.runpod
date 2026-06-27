@@ -92,6 +92,7 @@ ENV NODE_ENV=production \
     PYTHON_QUERY_WORKER=python3 \
     RAG_PYTHON_ENTRY=/app/rag/app/query_worker.py \
     RAG_INGEST_WORKER_ENTRY=/app/rag/app/ingest_worker.py \
+    FINANCIAL_CSV_INGEST_WORKER=/app/rag/app/ingest_financial_csv.py \
     REPORTS_DIR=/app/data/reports \
     POSTGRES_HOST=localhost \
     POSTGRES_PORT=5432 \
