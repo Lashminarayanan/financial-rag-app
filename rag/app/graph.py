@@ -266,6 +266,19 @@ def summarizer(state: State) -> State:
         system_prompt += "\n\nIMPORTANT: You have access to both structured financial data (marked [SQL]) and narrative documents (marked [DOC]). ALWAYS prioritize exact numbers from [SQL] sources over estimates from documents."
 
     # User prompt: Context and question
+    # Define separators outside f-string to avoid backslash in f-string expression
+    plan_sep = '\n- '
+    comp_sep = '\n- '
+    evidence_sep = '\n\n'
+    
+    plan_list = state.get('plan', [])
+    plan_text = plan_sep.join(plan_list) if plan_list else ''
+    
+    comparison_notes = state.get('comparison_notes', []) or ['No comparator notes']
+    comp_text = comp_sep.join(comparison_notes)
+    
+    evidence_text = evidence_sep.join(all_evidence)
+    
     user_prompt = f"""
 Question:
 {state['query']}
@@ -273,13 +286,13 @@ Question:
 Retrieval Strategy: {state.get('retrieval_strategy', 'unknown')}
 
 Execution Plan:
-- {'\n- '.join(state.get('plan', []))}
+- {plan_text}
 
 Comparator Notes:
-- {'\n- '.join(state.get('comparison_notes', []) or ['No comparator notes'])}
+- {comp_text}
 
 Evidence ({len(all_evidence)} sources):
-{'\n\n'.join(all_evidence)}
+{evidence_text}
 """.strip()
 
     state['system_prompt'] = system_prompt
