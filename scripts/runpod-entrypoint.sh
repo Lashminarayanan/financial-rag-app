@@ -40,7 +40,7 @@ echo "[1/4] Starting PostgreSQL..."
 # Initialize DB if not already done
 if [ ! -f "$PGDATA/PG_VERSION" ]; then
     echo "[postgres] Initializing database cluster..."
-    sudo -u postgres /usr/lib/postgresql/16/bin/initdb -D "$PGDATA"
+    sudo -u postgres /usr/lib/postgresql/16/bin/initdb -D "$PGDATA" --encoding=UTF8 --locale=en_US.UTF-8
 
     # Configure PostgreSQL
     echo "host all all 0.0.0.0/0 md5" >> "$PGDATA/pg_hba.conf"
@@ -62,7 +62,7 @@ echo "[postgres] PostgreSQL is ready."
 if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${POSTGRES_USER}'" | grep -q 1; then
     echo "[postgres] Creating user and database..."
     sudo -u postgres psql -c "CREATE USER ${POSTGRES_USER} WITH PASSWORD '${POSTGRES_PASSWORD}';"
-    sudo -u postgres psql -c "CREATE DATABASE ${POSTGRES_DB} OWNER ${POSTGRES_USER} ENCODING 'UTF8' LC_COLLATE 'English_India' LC_CTYPE 'English_India' TEMPLATE template0;"
+    sudo -u postgres psql -c "CREATE DATABASE ${POSTGRES_DB} OWNER ${POSTGRES_USER};"
     sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${POSTGRES_DB} TO ${POSTGRES_USER};"
 
     # Run init SQL scripts
