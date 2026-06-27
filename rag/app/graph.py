@@ -8,6 +8,13 @@ from .financial_repository import detect_financial_keywords, fetch_financial_dat
 from .ragas_evaluator import evaluate_response
 
 
+def decode_if_bytes(value):
+    """Convert bytes to string if needed."""
+    if isinstance(value, bytes):
+        return value.decode('utf-8', errors='replace')
+    return value
+
+
 # Analyst persona system prompts
 MODE_PROMPTS = {
     "general": """
@@ -177,9 +184,9 @@ def retriever(state: State) -> State:
             'chunk_index': row['chunk_index'],
             'page_no': row.get('page_no'),
             'section': row.get('section'),
-            'chunk_text': row['chunk_text'],
+            'chunk_text': decode_if_bytes(row['chunk_text']),
             'chunk_type': row['chunk_type'],
-            'table_markdown': row.get('table_markdown'),
+            'table_markdown': decode_if_bytes(row.get('table_markdown')),
             'metadata': row.get('metadata') or {},
             'file_name': row['file_name'],
             'similarity': float(row['similarity']) if row.get('similarity') is not None else None,
@@ -247,14 +254,14 @@ def summarizer(state: State) -> State:
     financial_data = state.get('financial_data', [])
     for item in financial_data:
         cite = f"[{cite_idx}] [SQL] {item['data_category'].upper()} - FY{item['fiscal_year']}"
-        all_evidence.append(cite + "\n" + item['text_summary'])
+        all_evidence.append(cite + "\n" + decode_if_bytes(item['text_summary']))
         cite_idx += 1
     
     # Add vector-based document chunks
     evidence = state.get('evidence', [])
     for ev in evidence:
         cite = f"[{cite_idx}] [DOC] {ev['file_name']} p.{ev.get('page_no') or 'n/a'} - {ev.get('section') or 'Unknown Section'}"
-        all_evidence.append(cite + "\n" + ev['chunk_text'])
+        all_evidence.append(cite + "\n" + decode_if_bytes(ev['chunk_text']))
         cite_idx += 1
 
     # Get mode-specific system prompt
@@ -336,11 +343,11 @@ def evaluate_quality(state: State) -> State:
     
     # Add financial data summaries
     for item in state.get('financial_data', []):
-        contexts.append(item.get('text_summary', ''))
+        contexts.append(decode_if_bytes(item.get('text_summary', '')))
     
     # Add document chunks
     for ev in state.get('evidence', []):
-        contexts.append(ev.get('chunk_text', ''))
+        contexts.append(decode_if_bytes(ev.get('chunk_text', '')))
     
     # Only evaluate if we have context
     if not contexts:
