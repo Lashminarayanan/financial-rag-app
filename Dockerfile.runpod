@@ -106,6 +106,7 @@ ENV NODE_ENV=production \
     OLLAMA_NUM_PARALLEL=2 \
     OLLAMA_MAX_LOADED_MODELS=2 \
     OLLAMA_KEEP_ALIVE=-1 \
+    ENABLE_RAGAS=true \
     PGDATA=/var/lib/postgresql/16/data \
     OLLAMA_MODELS=/workspace/ollama
 

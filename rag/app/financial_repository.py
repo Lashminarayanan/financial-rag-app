@@ -11,7 +11,7 @@ def detect_financial_keywords(query: str) -> Dict[str, bool]:
     Returns dict of metric categories and whether they're present.
     """
     query_lower = query.lower()
-    
+   
     return {
         'revenue': any(kw in query_lower for kw in ['revenue', 'sales', 'turnover', 'top line', 'topline']),
         'profit': any(kw in query_lower for kw in ['profit', 'earnings', 'net income', 'pat', 'ebitda', 'ebit', 'operating profit']),
@@ -28,7 +28,7 @@ def detect_financial_keywords(query: str) -> Dict[str, bool]:
 def extract_year_mentions(query: str) -> List[int]:
     """Extract year mentions like FY23, FY2023, 2023, etc."""
     years = []
-    
+   
     # FY23, FY2023
     fy_matches = re.findall(r'fy\s*(\d{2,4})', query.lower())
     for match in fy_matches:
@@ -36,11 +36,11 @@ def extract_year_mentions(query: str) -> List[int]:
         if year < 100:  # FY23 -> 2023
             year = 2000 + year
         years.append(year)
-    
+   
     # Plain years like 2023
     year_matches = re.findall(r'\b(20\d{2})\b', query)
     years.extend([int(y) for y in year_matches])
-    
+   
     return sorted(set(years))
 
 
@@ -51,15 +51,15 @@ def query_income_statements(
 ) -> List[Dict[str, Any]]:
     """
     Query income statement data (P&L metrics).
-    
+   
     Returns list of dicts with fiscal_year, sales, profit, eps, margins, etc.
     """
     conn = get_conn()
     cursor = conn.cursor()
-    
+   
     try:
         query = """
-            SELECT 
+            SELECT
                 c.company_name,
                 c.ticker,
                 fp.fiscal_year,
@@ -80,41 +80,41 @@ def query_income_statements(
             WHERE c.ticker = %s
               AND fp.period_type = 'annual'
         """
-        
+       
         params = [company_ticker]
-        
+       
         if fiscal_years:
             placeholders = ','.join(['%s'] * len(fiscal_years))
             query += f" AND fp.fiscal_year IN ({placeholders})"
             params.extend(fiscal_years)
-        
+       
         query += " ORDER BY fp.fiscal_year DESC LIMIT %s"
         params.append(limit)
-        
+       
         cursor.execute(query, params)
         rows = cursor.fetchall()
-        
+       
         results = []
         for row in rows:
             results.append({
-                'company_name': row[0],
-                'ticker': row[1],
-                'fiscal_year': row[2],
-                'period_type': row[3],
-                'sales': float(row[4]) if row[4] else None,
-                'other_income': float(row[5]) if row[5] else None,
-                'operating_profit': float(row[6]) if row[6] else None,
-                'ebitda': float(row[7]) if row[7] else None,
-                'profit_before_tax': float(row[8]) if row[8] else None,
-                'tax': float(row[9]) if row[9] else None,
-                'net_profit': float(row[10]) if row[10] else None,
-                'eps': float(row[11]) if row[11] else None,
-                'operating_margin_pct': float(row[12]) if row[12] else None,
-                'net_margin_pct': float(row[13]) if row[13] else None,
+                'company_name': row['company_name'],
+                'ticker': row['ticker'],
+                'fiscal_year': row['fiscal_year'],
+                'period_type': row['period_type'],
+                'sales': float(row['sales']) if row['sales'] else None,
+                'other_income': float(row['other_income']) if row['other_income'] else None,
+                'operating_profit': float(row['operating_profit']) if row['operating_profit'] else None,
+                'ebitda': float(row['ebitda']) if row['ebitda'] else None,
+                'profit_before_tax': float(row['profit_before_tax']) if row['profit_before_tax'] else None,
+                'tax': float(row['tax']) if row['tax'] else None,
+                'net_profit': float(row['net_profit']) if row['net_profit'] else None,
+                'eps': float(row['eps']) if row['eps'] else None,
+                'operating_margin_pct': float(row['operating_margin_pct']) if row['operating_margin_pct'] else None,
+                'net_margin_pct': float(row['net_margin_pct']) if row['net_margin_pct'] else None,
             })
-        
+       
         return results
-        
+       
     finally:
         cursor.close()
         conn.close()
@@ -128,10 +128,10 @@ def query_balance_sheets(
     """Query balance sheet data (assets, liabilities, equity)."""
     conn = get_conn()
     cursor = conn.cursor()
-    
+   
     try:
         query = """
-            SELECT 
+            SELECT
                 c.company_name,
                 fp.fiscal_year,
                 b.equity_share_capital,
@@ -150,44 +150,44 @@ def query_balance_sheets(
             WHERE c.ticker = %s
               AND fp.period_type = 'annual'
         """
-        
+       
         params = [company_ticker]
-        
+       
         if fiscal_years:
             placeholders = ','.join(['%s'] * len(fiscal_years))
             query += f" AND fp.fiscal_year IN ({placeholders})"
             params.extend(fiscal_years)
-        
+       
         query += " ORDER BY fp.fiscal_year DESC LIMIT %s"
         params.append(limit)
-        
+       
         cursor.execute(query, params)
         rows = cursor.fetchall()
-        
+       
         results = []
         for row in rows:
-            equity = (float(row[2]) if row[2] else 0) + (float(row[3]) if row[3] else 0)
-            debt_to_equity = (float(row[4]) / equity * 100) if (row[4] and equity > 0) else None
-            
+            equity = (float(row['equity_share_capital']) if row['equity_share_capital'] else 0) + (float(row['reserves']) if row['reserves'] else 0)
+            debt_to_equity = (float(row['borrowings']) / equity * 100) if (row['borrowings'] and equity > 0) else None
+           
             results.append({
-                'company_name': row[0],
-                'fiscal_year': row[1],
-                'equity_share_capital': float(row[2]) if row[2] else None,
-                'reserves': float(row[3]) if row[3] else None,
-                'borrowings': float(row[4]) if row[4] else None,
-                'total_liabilities': float(row[5]) if row[5] else None,
-                'net_fixed_assets': float(row[6]) if row[6] else None,
-                'investments': float(row[7]) if row[7] else None,
-                'total_assets': float(row[8]) if row[8] else None,
-                'receivables': float(row[9]) if row[9] else None,
-                'inventory': float(row[10]) if row[10] else None,
-                'cash_and_equivalents': float(row[11]) if row[11] else None,
+                'company_name': row['company_name'],
+                'fiscal_year': row['fiscal_year'],
+                'equity_share_capital': float(row['equity_share_capital']) if row['equity_share_capital'] else None,
+                'reserves': float(row['reserves']) if row['reserves'] else None,
+                'borrowings': float(row['borrowings']) if row['borrowings'] else None,
+                'total_liabilities': float(row['total_liabilities']) if row['total_liabilities'] else None,
+                'net_fixed_assets': float(row['net_fixed_assets']) if row['net_fixed_assets'] else None,
+                'investments': float(row['investments']) if row['investments'] else None,
+                'total_assets': float(row['total_assets']) if row['total_assets'] else None,
+                'receivables': float(row['receivables']) if row['receivables'] else None,
+                'inventory': float(row['inventory']) if row['inventory'] else None,
+                'cash_and_equivalents': float(row['cash_and_equivalents']) if row['cash_and_equivalents'] else None,
                 'total_equity': equity,
                 'debt_to_equity_pct': debt_to_equity,
             })
-        
+       
         return results
-        
+       
     finally:
         cursor.close()
         conn.close()
@@ -201,10 +201,10 @@ def query_cash_flows(
     """Query cash flow statement data."""
     conn = get_conn()
     cursor = conn.cursor()
-    
+   
     try:
         query = """
-            SELECT 
+            SELECT
                 c.company_name,
                 fp.fiscal_year,
                 cf.operating_cash_flow,
@@ -219,35 +219,35 @@ def query_cash_flows(
             WHERE c.ticker = %s
               AND fp.period_type = 'annual'
         """
-        
+       
         params = [company_ticker]
-        
+       
         if fiscal_years:
             placeholders = ','.join(['%s'] * len(fiscal_years))
             query += f" AND fp.fiscal_year IN ({placeholders})"
             params.extend(fiscal_years)
-        
+       
         query += " ORDER BY fp.fiscal_year DESC LIMIT %s"
         params.append(limit)
-        
+       
         cursor.execute(query, params)
         rows = cursor.fetchall()
-        
+       
         results = []
         for row in rows:
             results.append({
-                'company_name': row[0],
-                'fiscal_year': row[1],
-                'operating_cash_flow': float(row[2]) if row[2] else None,
-                'investing_cash_flow': float(row[3]) if row[3] else None,
-                'financing_cash_flow': float(row[4]) if row[4] else None,
-                'net_cash_flow': float(row[5]) if row[5] else None,
-                'free_cash_flow': float(row[6]) if row[6] else None,
-                'capex': float(row[7]) if row[7] else None,
+                'company_name': row['company_name'],
+                'fiscal_year': row['fiscal_year'],
+                'operating_cash_flow': float(row['operating_cash_flow']) if row['operating_cash_flow'] else None,
+                'investing_cash_flow': float(row['investing_cash_flow']) if row['investing_cash_flow'] else None,
+                'financing_cash_flow': float(row['financing_cash_flow']) if row['financing_cash_flow'] else None,
+                'net_cash_flow': float(row['net_cash_flow']) if row['net_cash_flow'] else None,
+                'free_cash_flow': float(row['free_cash_flow']) if row['free_cash_flow'] else None,
+                'capex': float(row['capex']) if row['capex'] else None,
             })
-        
+       
         return results
-        
+       
     finally:
         cursor.close()
         conn.close()
@@ -256,14 +256,14 @@ def query_cash_flows(
 def fetch_financial_data(query: str, company_ticker: str = 'EICHERMOT') -> List[Dict[str, Any]]:
     """
     Main entry point: Analyze query and fetch relevant financial data.
-    
+   
     Returns list of financial data items with metadata.
     """
     keywords = detect_financial_keywords(query)
     years = extract_year_mentions(query)
-    
+   
     financial_items = []
-    
+   
     # Income statement metrics
     if any([keywords['revenue'], keywords['profit'], keywords['eps'], keywords['margin']]):
         income_data = query_income_statements(
@@ -271,7 +271,7 @@ def fetch_financial_data(query: str, company_ticker: str = 'EICHERMOT') -> List[
             fiscal_years=years if years else None,
             limit=5
         )
-        
+       
         for item in income_data:
             financial_items.append({
                 'source_type': 'structured_sql',
@@ -281,7 +281,7 @@ def fetch_financial_data(query: str, company_ticker: str = 'EICHERMOT') -> List[
                 'metrics': item,
                 'text_summary': format_income_statement(item)
             })
-    
+   
     # Balance sheet metrics
     if keywords['balance_sheet']:
         balance_data = query_balance_sheets(
@@ -289,7 +289,7 @@ def fetch_financial_data(query: str, company_ticker: str = 'EICHERMOT') -> List[
             fiscal_years=years if years else None,
             limit=5
         )
-        
+       
         for item in balance_data:
             financial_items.append({
                 'source_type': 'structured_sql',
@@ -299,7 +299,7 @@ def fetch_financial_data(query: str, company_ticker: str = 'EICHERMOT') -> List[
                 'metrics': item,
                 'text_summary': format_balance_sheet(item)
             })
-    
+   
     # Cash flow metrics
     if keywords['cash_flow']:
         cash_data = query_cash_flows(
@@ -307,7 +307,7 @@ def fetch_financial_data(query: str, company_ticker: str = 'EICHERMOT') -> List[
             fiscal_years=years if years else None,
             limit=5
         )
-        
+       
         for item in cash_data:
             financial_items.append({
                 'source_type': 'structured_sql',
@@ -317,14 +317,14 @@ def fetch_financial_data(query: str, company_ticker: str = 'EICHERMOT') -> List[
                 'metrics': item,
                 'text_summary': format_cash_flow(item)
             })
-    
+   
     return financial_items
 
 
 def format_income_statement(data: Dict) -> str:
     """Format income statement data as readable text."""
     parts = [f"FY{data['fiscal_year']} Income Statement - {data['company_name']}:"]
-    
+   
     if data['sales']:
         parts.append(f"  • Sales: ₹{data['sales']:.2f} Cr")
     if data['operating_profit']:
@@ -337,14 +337,14 @@ def format_income_statement(data: Dict) -> str:
         parts.append(f"  • Operating Margin: {data['operating_margin_pct']:.2f}%")
     if data['net_margin_pct']:
         parts.append(f"  • Net Margin: {data['net_margin_pct']:.2f}%")
-    
+   
     return '\n'.join(parts)
 
 
 def format_balance_sheet(data: Dict) -> str:
     """Format balance sheet data as readable text."""
     parts = [f"FY{data['fiscal_year']} Balance Sheet - {data['company_name']}:"]
-    
+   
     if data['total_assets']:
         parts.append(f"  • Total Assets: ₹{data['total_assets']:.2f} Cr")
     if data['total_equity']:
@@ -355,21 +355,21 @@ def format_balance_sheet(data: Dict) -> str:
         parts.append(f"  • Debt-to-Equity: {data['debt_to_equity_pct']:.2f}%")
     if data['cash_and_equivalents']:
         parts.append(f"  • Cash: ₹{data['cash_and_equivalents']:.2f} Cr")
-    
+   
     return '\n'.join(parts)
 
 
 def format_cash_flow(data: Dict) -> str:
     """Format cash flow data as readable text."""
     parts = [f"FY{data['fiscal_year']} Cash Flow - {data['company_name']}:"]
-    
+   
     if data['operating_cash_flow']:
         parts.append(f"  • Operating Cash Flow: ₹{data['operating_cash_flow']:.2f} Cr")
     if data['free_cash_flow']:
         parts.append(f"  • Free Cash Flow: ₹{data['free_cash_flow']:.2f} Cr")
     if data['capex']:
         parts.append(f"  • Capex: ₹{data['capex']:.2f} Cr")
-    
+   
     return '\n'.join(parts)
 
 
@@ -381,15 +381,15 @@ def query_comprehensive_forensic_data(
     """
     Query comprehensive financial data for forensic analysis.
     Joins income statement, balance sheet, and cash flow data.
-    
+   
     Returns list of dicts with all key metrics per period for forensic checks.
     """
     conn = get_conn()
     cursor = conn.cursor()
-    
+   
     try:
         query = """
-            SELECT 
+            SELECT
                 c.company_name,
                 c.ticker,
                 fp.fiscal_year,
@@ -426,58 +426,63 @@ def query_comprehensive_forensic_data(
             WHERE c.ticker = %s
               AND fp.period_type = 'annual'
         """
-        
+       
         params = [company_ticker]
-        
+       
         if fiscal_years:
             placeholders = ','.join(['%s'] * len(fiscal_years))
             query += f" AND fp.fiscal_year IN ({placeholders})"
             params.extend(fiscal_years)
-        
+       
         query += " ORDER BY fp.fiscal_year DESC LIMIT %s"
         params.append(limit)
-        
+       
+        print(f"[SQL] Executing forensic data query for ticker: {company_ticker}")
         cursor.execute(query, params)
         rows = cursor.fetchall()
-        
+        print(f"[SQL] Query returned {len(rows)} rows")
+       
         results = []
         for row in rows:
-            equity = (float(row[14]) if row[14] else 0) + (float(row[15]) if row[15] else 0)
-            
+            equity = (float(row['equity_share_capital']) if row['equity_share_capital'] else 0) + (float(row['reserves']) if row['reserves'] else 0)
+           
             results.append({
-                'company_name': row[0],
-                'ticker': row[1],
-                'fiscal_year': row[2],
-                'period_type': row[3],
+                'company_name': row['company_name'],
+                'ticker': row['ticker'],
+                'fiscal_year': row['fiscal_year'],
+                'period_type': row['period_type'],
                 # P&L
-                'sales': float(row[4]) if row[4] else None,
-                'other_income': float(row[5]) if row[5] else None,
-                'operating_profit': float(row[6]) if row[6] else None,
-                'net_profit': float(row[7]) if row[7] else None,
-                'eps': float(row[8]) if row[8] else None,
-                'depreciation': float(row[9]) if row[9] else None,
-                'operating_margin_pct': float(row[10]) if row[10] else None,
-                'net_margin_pct': float(row[11]) if row[11] else None,
+                'sales': float(row['sales']) if row['sales'] else None,
+                'other_income': float(row['other_income']) if row['other_income'] else None,
+                'operating_profit': float(row['operating_profit']) if row['operating_profit'] else None,
+                'net_profit': float(row['net_profit']) if row['net_profit'] else None,
+                'eps': float(row['eps']) if row['eps'] else None,
+                'depreciation': float(row['depreciation']) if row['depreciation'] else None,
+                'operating_margin_pct': float(row['operating_margin_pct']) if row['operating_margin_pct'] else None,
+                'net_margin_pct': float(row['net_margin_pct']) if row['net_margin_pct'] else None,
                 # Balance Sheet
-                'total_assets': float(row[12]) if row[12] else None,
-                'total_liabilities': float(row[13]) if row[13] else None,
-                'equity_share_capital': float(row[14]) if row[14] else None,
-                'reserves': float(row[15]) if row[15] else None,
-                'borrowings': float(row[16]) if row[16] else None,
-                'net_fixed_assets': float(row[17]) if row[17] else None,
-                'capital_wip': float(row[18]) if row[18] else None,
-                'inventory': float(row[19]) if row[19] else None,
-                'receivables': float(row[20]) if row[20] else None,
-                'cash_and_equivalents': float(row[21]) if row[21] else None,
+                'total_assets': float(row['total_assets']) if row['total_assets'] else None,
+                'total_liabilities': float(row['total_liabilities']) if row['total_liabilities'] else None,
+                'equity_share_capital': float(row['equity_share_capital']) if row['equity_share_capital'] else None,
+                'reserves': float(row['reserves']) if row['reserves'] else None,
+                'borrowings': float(row['borrowings']) if row['borrowings'] else None,
+                'net_fixed_assets': float(row['net_fixed_assets']) if row['net_fixed_assets'] else None,
+                'capital_wip': float(row['capital_wip']) if row['capital_wip'] else None,
+                'inventory': float(row['inventory']) if row['inventory'] else None,
+                'receivables': float(row['receivables']) if row['receivables'] else None,
+                'cash_and_equivalents': float(row['cash_and_equivalents']) if row['cash_and_equivalents'] else None,
                 'total_equity': equity,
                 # Cash Flow
-                'operating_cash_flow': float(row[22]) if row[22] else None,
-                'free_cash_flow': float(row[23]) if row[23] else None,
-                'capex': float(row[24]) if row[24] else None,
+                'operating_cash_flow': float(row['operating_cash_flow']) if row['operating_cash_flow'] else None,
+                'free_cash_flow': float(row['free_cash_flow']) if row['free_cash_flow'] else None,
+                'capex': float(row['capex']) if row['capex'] else None,
             })
-        
+       
+        if results:
+            print(f"[SQL] Sample result: FY{results[0]['fiscal_year']} - {results[0]['company_name']}")
+       
         return results
-        
+       
     finally:
         cursor.close()
         conn.close()

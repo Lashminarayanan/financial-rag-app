@@ -56,6 +56,62 @@ def call_ollama(prompt: str, system_prompt: str = None) -> str:
         return ""
 
 
+def parse_score(response: str) -> float:
+    """
+    Parse score from LLM response, handling various formats.
+   
+    Supports:
+    - Plain number: "8"
+    - Decimal: "8.5"
+    - Fraction: "8/10" or "8 / 10"
+    - With text: "The score is 8" or "Rating: 8"
+    - With explanation: "8 - This is because..."
+   
+    Returns:
+        Score between 0.0 and 1.0, or 0.5 if parsing fails
+    """
+    import re
+   
+    response = response.strip()
+    print(f"[DEBUG] Parsing score from: '{response[:100]}'")
+   
+    # Try to extract number patterns
+    # Pattern 1: Look for "X/10" format
+    fraction_match = re.search(r'(\d+(?:\.\d+)?)\s*/\s*10', response)
+    if fraction_match:
+        score = float(fraction_match.group(1))
+        print(f"[DEBUG] Extracted fraction score: {score}/10")
+        return min(max(score / 10.0, 0.0), 1.0)
+   
+    # Pattern 2: Look for standalone number (possibly with decimal)
+    # First try to find just a number on its own line
+    lines = response.split('\n')
+    for line in lines:
+        line = line.strip()
+        if re.match(r'^\d+(?:\.\d+)?$', line):
+            score = float(line)
+            print(f"[DEBUG] Extracted standalone score: {score}")
+            return min(max(score / 10.0, 0.0), 1.0)
+   
+    # Pattern 3: Look for "score: X", "rating: X", etc.
+    keyword_match = re.search(r'(?:score|rating|result):\s*(\d+(?:\.\d+)?)', response, re.IGNORECASE)
+    if keyword_match:
+        score = float(keyword_match.group(1))
+        print(f"[DEBUG] Extracted keyword score: {score}")
+        return min(max(score / 10.0, 0.0), 1.0)
+   
+    # Pattern 4: First number in response (before any dash or explanation)
+    number_match = re.search(r'(\d+(?:\.\d+)?)', response)
+    if number_match:
+        score = float(number_match.group(1))
+        print(f"[DEBUG] Extracted first number: {score}")
+        return min(max(score / 10.0, 0.0), 1.0)
+   
+    # If all parsing fails, log the issue
+    print(f"[WARNING] Could not parse score from response: '{response[:200]}'")
+    return 0.5
+
+
 def evaluate_faithfulness(answer: str, contexts: List[str]) -> float:
     """
     Evaluate if answer is grounded in the provided contexts (no hallucination).
@@ -84,13 +140,7 @@ Rate how well the answer is grounded in the provided contexts on a scale of 0-10
 Respond with ONLY a number from 0-10, nothing else."""
 
     response = call_ollama(prompt)
-   
-    try:
-        score = float(response.strip())
-        return min(max(score / 10.0, 0.0), 1.0)  # Normalize to 0-1
-    except ValueError:
-        print(f"[WARNING] Could not parse faithfulness score: {response}")
-        return 0.5
+    return parse_score(response)
 
 
 def evaluate_relevancy(query: str, answer: str) -> float:
@@ -119,13 +169,7 @@ Rate how relevant and complete the answer is to the query on a scale of 0-10.
 Respond with ONLY a number from 0-10, nothing else."""
 
     response = call_ollama(prompt)
-   
-    try:
-        score = float(response.strip())
-        return min(max(score / 10.0, 0.0), 1.0)
-    except ValueError:
-        print(f"[WARNING] Could not parse relevancy score: {response}")
-        return 0.5
+    return parse_score(response)
 
 
 def evaluate_context_precision(query: str, contexts: List[str]) -> float:
@@ -156,13 +200,7 @@ Rate how relevant and useful these contexts are for answering the query on a sca
 Respond with ONLY a number from 0-10, nothing else."""
 
     response = call_ollama(prompt)
-   
-    try:
-        score = float(response.strip())
-        return min(max(score / 10.0, 0.0), 1.0)
-    except ValueError:
-        print(f"[WARNING] Could not parse precision score: {response}")
-        return 0.5
+    return parse_score(response)
 
 
 def evaluate_response(
